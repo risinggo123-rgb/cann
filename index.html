@@ -55,7 +55,10 @@
   <div id="tbest" class="muted">尚无推断数据——需要出现“多队同时变分且无人提交”的刷新事件</div>
   <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13px">
     <span class="muted">反估本队用时：</span>
-    该 case tbest <input id="tbIn" type="number" step="0.01" value="1.18"
+    <select id="caseSel" style="background:#0f1115;color:#e6e8ee;border:1px solid #2b3240;border-radius:5px;padding:2px 6px">
+      <option value="1.18">case#? → 1.18 µs</option>
+    </select>
+    tbest <input id="tbIn" type="number" step="0.01" value="1.18"
       style="width:84px;background:#0f1115;color:#e6e8ee;border:1px solid #2b3240;border-radius:5px;padding:2px 6px">
     µs × 本队 t/tbest <input id="rIn" type="number" step="0.01" value="2.30"
       style="width:70px;background:#0f1115;color:#e6e8ee;border:1px solid #2b3240;border-radius:5px;padding:2px 6px">
@@ -258,6 +261,8 @@ function bindCalc(){
   };
   tb.addEventListener('input', upd);
   rt.addEventListener('input', upd);
+  const sel = document.getElementById('caseSel');
+  if(sel) sel.addEventListener('change', ()=>{ tb.value = sel.value; upd(); });
   upd();
 }
 bindCalc();
@@ -272,7 +277,8 @@ async function renderTbestPanel(times, polls){
 
     const head = rows[0];
     const body = rows.slice(1).filter(r => r.length >= 4);
-    const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'), iV=head.indexOf('tbest_us');
+    const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'),
+          iV=head.indexOf('tbest_us'), iC=head.indexOf('case_id');
     if(iT<0||iN<0||iV<0){ box.innerHTML = '<div class="muted">tbest_log 表头异常</div>'; return; }
 
     // rows are appended in time order: take the last timestamp block, and the one before it
@@ -291,16 +297,26 @@ async function renderTbestPanel(times, polls){
         const d = (p!=null && Math.abs(v-p)>1e-9) ? v-p : 0;
         const cls = d<0 ? 'up' : (d>0 ? 'down' : 'muted');
         const dtxt = d ? `${d>0?'+':''}${d.toFixed(2)}` : '—';
-        return `<tr><td>case#${ci}</td><td class="num">${v.toFixed(2)}</td>
+        const cid = iC >= 0 ? String(r[iC] || '').slice(-6) : '';
+        return `<tr><td>case#${ci}</td><td class="muted">…${cid}</td><td class="num">${v.toFixed(2)}</td>
                 <td class="num ${cls}">${dtxt}</td></tr>`;
       }).join('');
 
     box.innerHTML = `<table style="table-layout:fixed">
-      <colgroup><col style="width:34%"><col style="width:40%"><col style="width:26%"></colgroup>
-      <thead><tr><th>用例</th><th class="num">tbest (µs)</th><th class="num">较上次</th></tr></thead>
+      <colgroup><col style="width:24%"><col style="width:26%"><col style="width:28%"><col style="width:22%"></colgroup>
+      <thead><tr><th>测试点</th><th>case_id</th><th class="num">tbest (µs)</th><th class="num">较上次</th></tr></thead>
       <tbody>${html}</tbody></table>
       <div class="muted" style="font-size:11px;margin-top:6px">
       数据时间 ${lastTs.slice(11)}　·　绿=变快，红=变慢</div>`;
+
+    // feed the reverse-estimate dropdown: case -> tbest
+    const sel = document.getElementById('caseSel');
+    if(sel){
+      const opts = cur.slice().sort((a,b)=> parseFloat(a[iN]) - parseFloat(b[iN]))
+        .map(r=>`<option value="${parseFloat(r[iV])}">case#${r[iN]} → ${parseFloat(r[iV]).toFixed(2)} µs</option>`);
+      sel.innerHTML = opts.join('');
+      sel.dispatchEvent(new Event('change'));
+    }
   } catch(err) {
     box.innerHTML = '<div class="muted">渲染失败：' + (err && err.message ? err.message : err) + '</div>';
   }
