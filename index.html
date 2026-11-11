@@ -26,7 +26,7 @@
   #board col.c-time { width:104px; }
   .up { color:var(--up); } .down { color:var(--down); } .warn { color:var(--warn); }
   .tag { font-size:11px; padding:1px 6px; border-radius:999px; border:1px solid var(--line); }
-  #chart { width:100%; height:220px; }
+  #chart { width:100%; height:260px; display:block; }
   .legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:8px; font-size:12px; }
   .legend i { display:inline-block; width:10px; height:3px; margin-right:5px;
               vertical-align:middle; border-radius:2px; }
@@ -63,7 +63,7 @@
 
 <div class="card" style="margin-top:16px">
   <h2>④ 分数走势（前 6 队）</h2>
-  <svg id="chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+  <svg id="chart"></svg>
   <div id="legend" class="legend"></div>
 </div>
 
@@ -282,7 +282,13 @@ async function refreshTbest(times, polls){
 
 function drawChart(times, polls, f, last){
   const svg = document.getElementById('chart');
-  const W=800,H=220,P=30;
+  // draw in real pixel coordinates so text is never stretched
+  const box = svg.getBoundingClientRect();
+  const W = Math.max(360, Math.round(box.width || 800));
+  const H = Math.max(200, Math.round(box.height || 260));
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  const P = 34;
   const lastPoll = polls.get(last)||[];
   // rows are written in rank order
   const topNames = lastPoll.filter(r => (+r[5]) > 0)
