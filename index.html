@@ -65,6 +65,17 @@
     → <b id="tOut" style="font-size:15px">—</b>
     <span class="muted" id="tHint" style="font-size:12px"></span>
   </div>
+  <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
+    <div class="muted" style="font-size:12px;margin-bottom:6px">
+      隐藏 10 例估值（tbest 取自外部约值表，平台不公开；用时 = tbest × 本队公开 ratio）
+    </div>
+    <table id="hiddenTb" style="table-layout:fixed">
+      <colgroup><col style="width:18%"><col style="width:26%"><col style="width:30%"><col></colgroup>
+      <thead><tr><th>隐藏点</th><th class="num">tbest 约值 (µs)</th>
+        <th class="num">本队用时（估）</th><th>置信度</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
 </div>
 
 <div class="grid">
@@ -216,6 +227,7 @@ async function refreshTbDay(){
     }
   } catch(e) {}
   const q = qOurs || 2.30;
+  renderHiddenTable(qOurs);
 
   const rowsHtml = body.slice(-40).reverse().map(r=>{
     const d = parseFloat(r[iD]);
@@ -291,6 +303,20 @@ function bindCalc(){
   upd();
 }
 bindCalc();
+
+// ---- hidden 10 cases: external tbest priors x our public ratio ----
+const HIDDEN_TBEST_APPROX = [47.3, 38.5, 14.7, 7.4, 5.5, 4.3, 2.05, 1.82, 1.00, 0.43];
+function renderHiddenTable(qOurs){
+  const q = qOurs || 2.30;
+  const tb = document.querySelector('#hiddenTb tbody');
+  if(!tb) return;
+  tb.innerHTML = HIDDEN_TBEST_APPROX.map((v,i)=>{
+    return `<tr><td>case#${i+6}</td><td class="num">${v.toFixed(2)}</td>
+      <td class="num">≈ ${(v*q).toFixed(2)}</td>
+      <td class="muted" style="font-size:11px">tbest 外部约值 / 用时 估算</td></tr>`;
+  }).join('');
+}
+renderHiddenTable(2.30);
 
 async function renderTbestPanel(times, polls){
   const box = document.getElementById('events');
