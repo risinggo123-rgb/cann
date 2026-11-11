@@ -185,7 +185,8 @@ async function refresh(){
     const hiddenAvg = (15 * sc - ps) / 10;
     if(hiddenAvg > 0.1 && hiddenAvg < 99){
       const q = Math.pow(1.5, 100 / hiddenAvg - 1);
-      renderHiddenTable(q, '由本队总分反解');
+      window.__hiddenQ = q;
+      renderHiddenTable(q, '由本队总分反解', window.__tbIdx || 1);
     }
   })();
 
@@ -324,19 +325,21 @@ bindCalc();
 
 // ---- hidden 10 cases: external tbest priors x our public ratio ----
 const HIDDEN_TBEST_APPROX = [47.3, 38.5, 14.7, 7.4, 5.5, 4.3, 2.05, 1.82, 1.00, 0.43];
-function renderHiddenTable(qOurs, source){
+function renderHiddenTable(qOurs, source, tbScale){
   const q = qOurs || 2.30;
+  const f = (tbScale && tbScale > 0) ? tbScale : 1.0;
   const tb = document.querySelector('#hiddenTb tbody');
   if(!tb) return;
   tb.innerHTML = HIDDEN_TBEST_APPROX.map((v,i)=>{
-    return `<tr><td>case#${i+6}</td><td class="num">${v.toFixed(2)}</td>
-      <td class="num">≈ ${(v*q).toFixed(2)}</td>
+    const tv = v * f;
+    return `<tr><td>case#${i+6}</td><td class="num">${tv.toFixed(2)}</td>
+      <td class="num">≈ ${(tv*q).toFixed(2)}</td>
       <td class="muted" style="font-size:11px">tbest 外部约值 / 用时 估算</td></tr>`;
   }).join('');
   const note = document.getElementById('hiddenQ');
   if(note){
     note.textContent = `本队隐藏平均 ratio = ${q.toFixed(3)}×` + (source ? `（${source}）` : '')
-      + `　·　按该 ratio × 每个 tbest 反推用时`;
+      + `　·　tbest 已按最近刷新比例 ×${f.toFixed(4)} 缩放`;
   }
 }
 renderHiddenTable(2.30);
@@ -453,6 +456,7 @@ async function refreshTbest(times, polls){
      监控中：已采样 <b>${times?times.length:0}</b> 轮 · <b>${nTeams}</b> 支队伍 ·
      最近采样 ${lastTs?lastTs.slice(11):'—'}（每 10 秒采样一轮）</div>`;
   if(!rows || rows.length < 2){
+    window.__tbIdx = 1;
     // fallback: derive the hidden-layer level directly from score arithmetic
     // 15*score = sum(15 case scores); the 5 public ones are known exactly.
     let proxy = '';
@@ -493,6 +497,8 @@ async function refreshTbest(times, polls){
         iR=idx('implied_r'), iCum=idx('cumulative_index'),
         iLo=idx('ci_low'), iHi=idx('ci_high'), iR2=idx('r2'), iRmse=idx('rmse');
   const cum = +last[iCum], r = +last[iR];
+  window.__tbIdx = cum;
+  renderHiddenTable(window.__hiddenQ, '由本队总分反解', cum);
   const dir = cum > 1 ? '变慢（tbest 变大）' : (cum < 1 ? '变快（tbest 变小）' : '不变');
   box.innerHTML = status +
     `<div style="font-size:26px;margin:6px 0 8px">
