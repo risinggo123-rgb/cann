@@ -1,0 +1,211 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CANN 决赛 · 榜单与提交监控</title>
+<style>
+  :root { --bg:#0f1115; --card:#171a21; --line:#262b36; --fg:#e6e8ee; --dim:#8b93a7;
+          --up:#3fb950; --down:#f85149; --warn:#d29922; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:20px; background:var(--bg); color:var(--fg);
+         font:14px/1.5 "Segoe UI",system-ui,sans-serif; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:12px; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns: 1.4fr 1fr; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card h2 { font-size:13px; margin:0 0 10px; color:var(--dim); font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:5px 6px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--dim); font-weight:500; font-size:12px; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .up { color:var(--up); } .down { color:var(--down); } .warn { color:var(--warn); }
+  .tag { font-size:11px; padding:1px 6px; border-radius:999px; border:1px solid var(--line); }
+  #chart { width:100%; height:220px; }
+  .ev { font-size:12px; padding:4px 0; border-bottom:1px dashed var(--line); }
+  .muted { color:var(--dim); }
+</style>
+</head>
+<body>
+<h1>CANN 决赛 · 榜单与提交监控</h1>
+<div class="sub">数据来源：monitor_log.csv / monitor_events.csv　·　每 15 秒自动刷新</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>当前榜单（最近一次轮询）</h2>
+    <table id="board"><thead><tr>
+      <th>#</th><th>队伍</th><th class="num">分数</th><th class="num">变化</th><th>提交时间</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+  <div class="card">
+    <h2>事件流（提交 / tbest 刷新）</h2>
+    <div id="events"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h2>分数走势（前 6 队）</h2>
+  <svg id="chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h2>tbest 推断（相对指数，来自 infer_report.csv）</h2>
+  <div id="tbest" class="muted">尚无推断数据——需要出现“多队同时变分且无人提交”的刷新事件</div>
+</div>
+
+<script src="https://raw.githubusercontent.com/risinggo123-rgb/cann/main/data.js"></script>
+<script>
+function parseCSV(text){
+  const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c=='"'){ if(text[i+1]=='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else if(c=='"') q=true;
+    else if(c==','){ row.push(cur); cur=''; }
+    else if(c=='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+    else if(c!='\r') cur+=c;
+  }
+  if(cur.length||row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r=>r.length>1);
+}
+
+async function loadCSV(name){
+  // When opened via file:// the fetch below is blocked; data.js (optional)
+  // injects window.MON_DATA = { "monitor_log.csv": "...", ... } instead.
+  if (window.MON_DATA && window.MON_DATA[name]) return parseCSV(window.MON_DATA[name]);
+  const r = await fetch(name + '?t=' + Date.now());
+  if(!r.ok) throw new Error(name + ' ' + r.status);
+  return parseCSV(await r.text());
+}
+
+function fmtTime(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d)) return iso;
+  return d.toLocaleString('zh-CN',{hour12:false, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+async function refresh(){
+  let log, evt;
+  try { log = await loadCSV('monitor_log.csv'); }
+  catch(e){ document.querySelector('#board tbody').innerHTML =
+      '<tr><td colspan="5" class="muted">找不到 monitor_log.csv —— 请先运行 monitor_tbest.py，并用 http 服务打开本页</td></tr>'; return; }
+  try { evt = await loadCSV('monitor_events.csv'); } catch(e){ evt=[]; }
+
+  const head = log[0], rows = log.slice(1);
+  const idx = n => head.indexOf(n);
+  const oT=idx('ts_bj'),oR=idx('rank'),oN=idx('team'),oU=idx('user_id'),
+        oS=idx('submission_id'),oSc=idx('score'),oC=idx('create_time');
+
+  // group by poll timestamp
+  const polls = new Map();
+  for(const r of rows){
+    if(!polls.has(r[oT])) polls.set(r[oT],[]);
+    polls.get(r[oT]).push(r);
+  }
+  const times = [...polls.keys()].sort();
+  const last = times[times.length-1];
+  const prev = times[times.length-2];
+  const cur = polls.get(last)||[], old = prev?polls.get(prev)||[]:[];
+  const oldMap = new Map(old.map(r=>[r[oU], r]));
+
+  cur.sort((a,b)=> (+a[oR]) - (+b[oR]));
+  const tb = document.querySelector('#board tbody');
+  tb.innerHTML = cur.map(r=>{
+    const o = oldMap.get(r[oU]);
+    const d = o ? (+r[oSc] - +o[oSc]) : 0;
+    const cls = d>1e-9?'up':(d<-1e-9?'down':'muted');
+    const dtxt = o && Math.abs(d)>1e-9 ? (d>0?'+':'')+d.toFixed(2) : '';
+    return `<tr><td>${r[oR]}</td><td>${r[oN]||r[oU]}</td>
+      <td class="num">${(+r[oSc]).toFixed(2)}</td>
+      <td class="num ${cls}">${dtxt}</td>
+      <td class="muted">${fmtTime(r[oC])}</td></tr>`;
+  }).join('');
+
+  // events
+  const eh = evt[0]||[], er = evt.slice(-40).reverse();
+  const eT=eh.indexOf('ts_bj'),eK=eh.indexOf('kind'),eN=eh.indexOf('team'),
+        eO=eh.indexOf('score_old'),eS2=eh.indexOf('score_new'),eNote=eh.indexOf('note');
+  document.getElementById('events').innerHTML = er.map(r=>{
+    const kind=r[eK];
+    const tag = kind==='submit'
+      ? '<span class="tag up">提交</span>'
+      : '<span class="tag warn">tbest 刷新</span>';
+    const d=(+r[eS2]-+r[eO]).toFixed(2);
+    return `<div class="ev">${r[eT].slice(11)} ${tag} <b>${r[eN]}</b>
+      <span class="muted">${(+r[eO]).toFixed(2)} → ${(+r[eS2]).toFixed(2)} (${d})</span></div>`;
+  }).join('') || '<div class="muted">暂无事件</div>';
+
+  drawChart(times, polls, {oN,oSc}, last);
+  refreshTbest();
+}
+
+async function refreshTbest(){
+  const box = document.getElementById('tbest');
+  let rows;
+  try { rows = await loadCSV('infer_report.csv'); }
+  catch(e){ return; }
+  if(rows.length < 2){ return; }
+  const head = rows[0], body = rows.slice(1);
+  const idx = n => head.indexOf(n);
+  const last = body[body.length-1];
+  const iPoll=idx('poll'), iTeams=idx('teams_moved'), iMed=idx('median_delta'),
+        iR=idx('implied_r'), iCum=idx('cumulative_index'),
+        iLo=idx('ci_low'), iHi=idx('ci_high'), iR2=idx('r2'), iRmse=idx('rmse');
+  const cum = +last[iCum], r = +last[iR];
+  const dir = cum > 1 ? '变慢（tbest 变大）' : (cum < 1 ? '变快（tbest 变小）' : '不变');
+  box.innerHTML =
+    `<div style="font-size:20px;margin-bottom:6px">
+       相对指数 <b>${cum.toFixed(3)}×</b>
+       <span class="muted" style="font-size:12px">（基准=观测起点）</span></div>
+     <div class="muted" style="font-size:12px">
+       最近事件：poll ${last[iPoll]}，${last[iTeams]} 队受影响，
+       Δ中位数 ${(+last[iMed]).toFixed(2)}，推得 r=${r.toFixed(3)}
+       ${iLo>=0 && last[iLo] ? `（95% CI ${last[iLo]}–${last[iHi]}）` : ''}，
+       R²=${iR2>=0 ? last[iR2] : 'n/a'}，RMSE=${iRmse>=0 ? last[iRmse] : 'n/a'}<br>
+       解读：相对起点 tbest ${dir}，约 <b>${cum.toFixed(2)}×</b>
+     </div>
+     <div class="muted" style="font-size:11px;margin-top:6px">
+       绝对值需锚点（如 122.5 µs）；每队仅一个总分、隐藏 t_i 未知，故只能给趋势与量级。
+     </div>`;
+}
+
+function drawChart(times, polls, f, last){
+  const svg = document.getElementById('chart');
+  const W=800,H=220,P=30;
+  const lastPoll = polls.get(last)||[];
+  // rows are written in rank order
+  const topNames = lastPoll.slice(0,6).map(r=>r[f.oN]).filter(Boolean);
+  let lo=1e9, hi=-1e9;
+  const series = topNames.map(n=>{
+    const pts = times.map((t,i)=>{
+      const r = (polls.get(t)||[]).find(x=>x[f.oN]===n);
+      const v = r? +r[f.oSc] : null;
+      if(v!=null){ lo=Math.min(lo,v); hi=Math.max(hi,v); }
+      return {i,v};
+    });
+    return {name:n, pts};
+  });
+  if(!series.length){ svg.innerHTML=''; return; }
+  lo=Math.max(0, lo-2); hi=hi+2;
+  const x = i => P + (W-2*P) * (times.length<=1?0:i/(times.length-1));
+  const y = v => H-P - (H-2*P) * ((v-lo)/(hi-lo||1));
+  const colors=['#58a6ff','#3fb950','#d29922','#f778ba','#a371f7','#39c5cf'];
+  let out='';
+  series.forEach((s,k)=>{
+    const d = s.pts.filter(p=>p.v!=null).map((p,j)=>
+      (j?'L':'M')+x(p.i).toFixed(1)+' '+y(p.v).toFixed(1)).join(' ');
+    out += `<path d="${d}" fill="none" stroke="${colors[k%6]}" stroke-width="2"/>`;
+    const lp = s.pts.filter(p=>p.v!=null).pop();
+    if(lp) out += `<text x="${x(lp.i)-4}" y="${y(lp.v)-6}" fill="${colors[k%6]}" font-size="11" text-anchor="end">${s.name.slice(0,8)}</text>`;
+  });
+  out += `<line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#262b36"/>`;
+  svg.innerHTML = out;
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
+
+
