@@ -150,38 +150,46 @@ async function refresh(){
 
 async function renderTbestPanel(times, polls){
   const box = document.getElementById('events');
-  let rows;
-  try { rows = await loadCSV('tbest_log.csv'); }
-  catch(e){ box.innerHTML = '<div class="muted">等待 tbest_log.csv…</div>'; return; }
-  if(rows.length < 2){ box.innerHTML = '<div class="muted">等待首个采样…</div>'; return; }
+  try {
+    let rows;
+    try { rows = await loadCSV('tbest_log.csv'); }
+    catch(e){ box.innerHTML = '<div class="muted">data.js 里没有 tbest_log.csv（等待下一轮推送）</div>'; return; }
+    if(!rows || rows.length < 2){ box.innerHTML = '<div class="muted">等待首个采样…</div>'; return; }
 
-  const head = rows[0], body = rows.slice(1);
-  const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'), iV=head.indexOf('tbest_us');
-  const byTs = new Map();
-  for(const r of body){
-    if(!byTs.has(r[iT])) byTs.set(r[iT], new Map());
-    byTs.get(r[iT]).set(r[iN], parseFloat(r[iV]));
+    const head = rows[0];
+    const body = rows.slice(1).filter(r => r.length >= 4);
+    const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'), iV=head.indexOf('tbest_us');
+    if(iT<0||iN<0||iV<0){ box.innerHTML = '<div class="muted">tbest_log 表头异常</div>'; return; }
+
+    // rows are appended in time order: take the last timestamp block, and the one before it
+    const lastTs = body[body.length-1][iT];
+    const cur = body.filter(r => r[iT] === lastTs);
+    const prevTs = body.filter(r => r[iT] !== lastTs).slice(-1)[0];
+    const prev = prevTs ? body.filter(r => r[iT] === prevTs[iT]) : [];
+    const prevMap = {};
+    prev.forEach(r => { prevMap[r[iN]] = parseFloat(r[iV]); });
+
+    const html = cur
+      .sort((a,b)=> parseFloat(a[iN]) - parseFloat(b[iN]))
+      .map(r=>{
+        const ci = r[iN], v = parseFloat(r[iV]);
+        const p = prevMap[ci];
+        const d = (p!=null && Math.abs(v-p)>1e-9) ? v-p : 0;
+        const cls = d<0 ? 'up' : (d>0 ? 'down' : 'muted');
+        const dtxt = d ? `${d>0?'+':''}${d.toFixed(2)}` : '—';
+        return `<tr><td>case#${ci}</td><td class="num">${v.toFixed(2)}</td>
+                <td class="num ${cls}">${dtxt}</td></tr>`;
+      }).join('');
+
+    box.innerHTML = `<table style="table-layout:fixed">
+      <colgroup><col style="width:34%"><col style="width:40%"><col style="width:26%"></colgroup>
+      <thead><tr><th>用例</th><th class="num">tbest (µs)</th><th class="num">较上次</th></tr></thead>
+      <tbody>${html}</tbody></table>
+      <div class="muted" style="font-size:11px;margin-top:6px">
+      数据时间 ${lastTs.slice(11)}　·　绿=变快，红=变慢</div>`;
+  } catch(err) {
+    box.innerHTML = '<div class="muted">渲染失败：' + (err && err.message ? err.message : err) + '</div>';
   }
-  const tsList=[...byTs.keys()].sort();
-  const latest = byTs.get(tsList[tsList.length-1]) || new Map();
-  const prevMap = tsList.length>1 ? byTs.get(tsList[tsList.length-2]) : new Map();
-
-  const cases=[...latest.keys()].sort((a,b)=>a-b);
-  const html = cases.map(ci=>{
-    const v = latest.get(ci);
-    const p = prevMap.get(ci);
-    const d = (p!=null && Math.abs(v-p)>1e-9) ? v-p : 0;
-    const cls = d<0 ? 'up' : (d>0 ? 'down' : 'muted');
-    const dtxt = d ? `${d>0?'+':''}${d.toFixed(2)}` : '';
-    return `<tr><td>case#${ci}</td><td class="num">${v.toFixed(2)}</td>
-            <td class="num ${cls}">${dtxt}</td></tr>`;
-  }).join('');
-  box.innerHTML = `<table style="table-layout:fixed">
-                   <colgroup><col style="width:34%"><col style="width:40%"><col style="width:26%"></colgroup>
-                   <thead><tr><th>用例</th><th class="num">tbest (µs)</th>
-                   <th class="num">较上次</th></tr></thead><tbody>${html}</tbody></table>
-                   <div class="muted" style="font-size:11px;margin-top:6px">
-                   数据时间 ${tsList[tsList.length-1].slice(11)}　·　绿=变快，红=变慢</div>`;
 }
 
 async function refreshTbEvents(times, polls){
@@ -277,7 +285,8 @@ function drawChart(times, polls, f, last){
   const W=800,H=220,P=30;
   const lastPoll = polls.get(last)||[];
   // rows are written in rank order
-  const topNames = lastPoll.slice(0,6).map(r=>r[f.oN]).filter(Boolean);
+  const topNames = lastPoll.filter(r => (+r[5]) > 0)
+                           .slice(0,6).map(r=>r[f.oN]).filter(Boolean);
   let lo=1e9, hi=-1e9;
   const series = topNames.map(n=>{
     const pts = times.map((t,i)=>{
@@ -289,14 +298,25 @@ function drawChart(times, polls, f, last){
     return {name:n, pts};
   });
   if(!series.length){ svg.innerHTML=''; return; }
-  lo=Math.max(0, lo-2); hi=hi+2;
-  const x = i => P + (W-2*P) * (times.length<=1?0:i/(times.length-1));
-  const y = v => H-P - (H-2*P) * ((v-lo)/(hi-lo||1));
+
+  // ---- nice axis ticks -------------------------------------------------
+  const span = Math.max(hi - lo, 1);
+  const rawStep = span / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+  const yLo = Math.max(0, Math.floor(lo / step) * step);
+  const yHi = Math.ceil(hi / step) * step;
+  // time-proportional x axis (handles gaps from restarts)
+  const tsMs = times.map(t => new Date(String(t).replace(' ', 'T')).getTime() || 0);
+  const t0 = tsMs[0], t1 = tsMs[tsMs.length-1] || (t0 + 1);
+  const x = i => P + (W-2*P) * ((tsMs[i]-t0) / ((t1-t0)||1));
+  const y = v => H-P - (H-2*P) * ((v-yLo)/((yHi-yLo)||1));
   const colors=['#58a6ff','#3fb950','#d29922','#f778ba','#a371f7','#39c5cf'];
   let out='';
-  // horizontal grid + y ticks
-  for(let g=0; g<=4; g++){
-    const v = lo + (hi-lo)*g/4, yy = y(v);
+  // horizontal grid + y ticks (multiples of step)
+  for(let v=yLo; v<=yHi+1e-9; v+=step){
+    const yy = y(v);
     out += `<line x1="${P}" y1="${yy.toFixed(1)}" x2="${W-P}" y2="${yy.toFixed(1)}"
              stroke="#262b36" stroke-width="1"/>`;
     out += `<text x="${P-6}" y="${(yy+3).toFixed(1)}" fill="#8b93a7" font-size="10"
@@ -308,12 +328,18 @@ function drawChart(times, polls, f, last){
     out += `<path d="${d}" fill="none" stroke="${colors[k%6]}" stroke-width="2"/>`;
   });
   out += `<line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#262b36"/>`;
-  // x ticks: first / middle / last
-  [0, Math.floor((times.length-1)/2), times.length-1].forEach((idx,k)=>{
+  // x ticks: 5 evenly spaced in TIME, snapped to the nearest sample
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(p => {
+    const target = t0 + (t1-t0)*p;
+    let best = 0, bd = Infinity;
+    tsMs.forEach((m,i)=>{ const d=Math.abs(m-target); if(d<bd){bd=d;best=i;} });
+    return best;
+  });
+  [...new Set(ticks)].forEach((idx,k,arr)=>{
     if(idx<0) return;
     const t=times[idx]||'';
     out += `<text x="${x(idx).toFixed(1)}" y="${H-P+14}" fill="#8b93a7" font-size="10"
-             text-anchor="${k===0?'start':(k===2?'end':'middle')}">${t.slice(11,19)}</text>`;
+             text-anchor="${k===0?'start':(k===arr.length-1?'end':'middle')}">${t.slice(11,16)}</text>`;
   });
   svg.innerHTML = out;
 
