@@ -29,31 +29,31 @@
 <h1>CANN 决赛 · 榜单与提交监控</h1>
 <div class="sub">数据来源：monitor_log.csv / monitor_events.csv　·　每 15 秒自动刷新</div>
 
+<div class="card" style="padding:20px;margin-bottom:16px">
+  <h2 style="font-size:15px;color:#e6e8ee">① 全局 tbest 推断（主）</h2>
+  <div id="tbest" class="muted">尚无推断数据——需要出现“多队同时变分且无人提交”的刷新事件</div>
+</div>
+
 <div class="grid">
   <div class="card">
-    <h2>当前榜单（最近一次轮询）</h2>
+    <h2>② 当前榜单</h2>
     <table id="board"><thead><tr>
       <th>#</th><th>队伍</th><th class="num">分数</th><th class="num">变化</th><th>提交时间</th>
     </tr></thead><tbody></tbody></table>
   </div>
   <div class="card">
-    <h2>全局 tbest（公开 case，µs）</h2>
+    <h2>③ 公开 case 的全局 tbest（µs）</h2>
     <div id="events"></div>
   </div>
 </div>
 
 <div class="card" style="margin-top:16px">
-  <h2>分数走势（前 6 队）</h2>
+  <h2>④ 分数走势（前 6 队）</h2>
   <svg id="chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
 </div>
 
 <div class="card" style="margin-top:16px">
-  <h2>tbest 推断（相对指数，来自 infer_report.csv）</h2>
-  <div id="tbest" class="muted">尚无推断数据——需要出现“多队同时变分且无人提交”的刷新事件</div>
-</div>
-
-<div class="card" style="margin-top:16px">
-  <h2>全局 tbest 刷新 · 具体到 case（公开 case 精确，隐藏 case 为推断）</h2>
+  <h2>⑤ 全局 tbest 刷新历史 · 具体到 case</h2>
   <div id="tbevents" class="muted">等待数据…</div>
 </div>
 
