@@ -53,6 +53,20 @@
 <div class="card" style="padding:20px;margin-bottom:16px">
   <h2 style="font-size:15px;color:#e6e8ee">① 全局 tbest 推断（主）</h2>
   <div id="tbest" class="muted">尚无推断数据——需要出现“多队同时变分且无人提交”的刷新事件</div>
+  <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
+    <div class="muted" style="font-size:12px;margin-bottom:6px">
+      隐藏 10 例（case#6–15）估值：tbest 用外部约值表；本队用时 = 本队隐藏平均 ratio × tbest
+    </div>
+    <table id="hiddenTb" style="table-layout:fixed">
+      <colgroup><col style="width:18%"><col style="width:26%"><col style="width:30%"><col></colgroup>
+      <thead><tr><th>隐藏点</th><th class="num">tbest 约值 (µs)</th>
+        <th class="num">本队用时（估）</th><th>置信度</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="hiddenQ" class="muted" style="font-size:11px;margin-top:5px">
+      本队隐藏平均 ratio：计算中…</div>
+  </div>
+
   <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13px">
     <span class="muted">反估本队用时：</span>
     <select id="caseSel" style="background:#0f1115;color:#e6e8ee;border:1px solid #2b3240;border-radius:5px;padding:2px 6px">
@@ -64,17 +78,6 @@
       style="width:70px;background:#0f1115;color:#e6e8ee;border:1px solid #2b3240;border-radius:5px;padding:2px 6px">
     → <b id="tOut" style="font-size:15px">—</b>
     <span class="muted" id="tHint" style="font-size:12px"></span>
-  </div>
-  <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
-    <div class="muted" style="font-size:12px;margin-bottom:6px">
-      隐藏 10 例估值（tbest 取自外部约值表，平台不公开；用时 = tbest × 本队公开 ratio）
-    </div>
-    <table id="hiddenTb" style="table-layout:fixed">
-      <colgroup><col style="width:18%"><col style="width:26%"><col style="width:30%"><col></colgroup>
-      <thead><tr><th>隐藏点</th><th class="num">tbest 约值 (µs)</th>
-        <th class="num">本队用时（估）</th><th>置信度</th></tr></thead>
-      <tbody></tbody>
-    </table>
   </div>
 </div>
 
@@ -170,6 +173,21 @@ async function refresh(){
   const prev = times[times.length-2];
   const cur = polls.get(last)||[], old = prev?polls.get(prev)||[]:[];
   const oldMap = new Map(old.map(r=>[r[oU], r]));
+
+  // our own hidden-average ratio, solved from 15*score - public_sum
+  (function(){
+    const OUR = '6a9fde1cc76b321ca6f7988c';
+    const me = cur.find(r => r[oU] === OUR);
+    if(!me) return;
+    const sc = parseFloat(me[oSc]);
+    const ps = parseFloat(me[8] || '0');
+    if(!(ps > 0)) return;
+    const hiddenAvg = (15 * sc - ps) / 10;
+    if(hiddenAvg > 0.1 && hiddenAvg < 99){
+      const q = Math.pow(1.5, 100 / hiddenAvg - 1);
+      renderHiddenTable(q, '由本队总分反解');
+    }
+  })();
 
   // header status: data age
   (function(){
@@ -306,7 +324,7 @@ bindCalc();
 
 // ---- hidden 10 cases: external tbest priors x our public ratio ----
 const HIDDEN_TBEST_APPROX = [47.3, 38.5, 14.7, 7.4, 5.5, 4.3, 2.05, 1.82, 1.00, 0.43];
-function renderHiddenTable(qOurs){
+function renderHiddenTable(qOurs, source){
   const q = qOurs || 2.30;
   const tb = document.querySelector('#hiddenTb tbody');
   if(!tb) return;
@@ -315,6 +333,11 @@ function renderHiddenTable(qOurs){
       <td class="num">≈ ${(v*q).toFixed(2)}</td>
       <td class="muted" style="font-size:11px">tbest 外部约值 / 用时 估算</td></tr>`;
   }).join('');
+  const note = document.getElementById('hiddenQ');
+  if(note){
+    note.textContent = `本队隐藏平均 ratio = ${q.toFixed(3)}×` + (source ? `（${source}）` : '')
+      + `　·　按该 ratio × 每个 tbest 反推用时`;
+  }
 }
 renderHiddenTable(2.30);
 
