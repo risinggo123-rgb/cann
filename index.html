@@ -235,40 +235,23 @@ async function refreshTbDay(){
   const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'),
         iV=head.indexOf('tbest_us'), iP=head.indexOf('prev_us'), iD=head.indexOf('delta_us');
 
-  // our own team's calibration: median public t/tbest (column pub_ratio)
-  const OUR_UID = '6a9fde1cc76b321ca6f7988c';
-  let qOurs = null;
-  try {
-    const ml = await loadCSV('monitor_log.csv');
-    const mh = ml[0], mu = mh.indexOf('user_id'), mq = mh.indexOf('pub_ratio');
-    for (let i = ml.length - 1; i > 0; i--) {
-      if (ml[i][mu] === OUR_UID && ml[i][mq]) { qOurs = parseFloat(ml[i][mq]); break; }
-    }
-  } catch(e) {}
-  const q = qOurs || 2.30;
-  renderHiddenTable(qOurs);
-
   const rowsHtml = body.slice(-40).reverse().map(r=>{
     const d = parseFloat(r[iD]);
     const cls = d<0?'up':(d>0?'down':'muted');
     const tb = parseFloat(r[iV]);
-    const est = tb * q;
-    const conf = qOurs ? '<span class="up">tbest 精确</span> / 用时 估算' : '<span class="warn">tbest 精确</span> / 用时 粗估';
     return `<tr><td class="muted">${r[iT].slice(5)}</td><td>case#${r[iN]}</td>
       <td class="num">${parseFloat(r[iP]).toFixed(2)} → <b>${tb.toFixed(2)}</b>
         <span class="${cls}">${d>0?'+':''}${d.toFixed(2)}</span></td>
-      <td class="num">≈ ${est.toFixed(2)} µs</td>
-      <td class="muted" style="font-size:11px">${conf}</td></tr>`;
+      </tr>`;
   }).join('');
 
   box.innerHTML = `<table style="table-layout:fixed">
-    <colgroup><col style="width:18%"><col style="width:14%"><col style="width:30%"><col style="width:20%"><col></colgroup>
-    <thead><tr><th>时间</th><th>case</th><th class="num">全局 tbest (µs)</th>
-      <th class="num">本队用时（估）</th><th>置信度</th></tr></thead>
+    <colgroup><col style="width:24%"><col style="width:18%"><col></colgroup>
+    <thead><tr><th>时间</th><th>case</th><th class="num">全局 tbest (µs)</th></tr></thead>
     <tbody>${rowsHtml}</tbody></table>
     <div class="muted" style="font-size:11px;margin-top:6px">
-      共 ${body.length} 条变更　·　tbest 为平台实测值（10 s 采样，精确）；
-      本队用时 = tbest × 本队公开 t/tbest 中位数（${q.toFixed(2)}×），隐藏 case 的真实比值可能不同，故为估算。</div>`;
+      共 ${body.length} 条变更　·　tbest 为平台实测值（10 s 采样，精确）。
+      公开 case 的本队用时请直接看榜单。</div>`;
 }
 
 // ---- chart time window ------------------------------------------------
