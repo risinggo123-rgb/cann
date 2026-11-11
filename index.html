@@ -30,6 +30,9 @@
   .legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:8px; font-size:12px; }
   .legend i { display:inline-block; width:10px; height:3px; margin-right:5px;
               vertical-align:middle; border-radius:2px; }
+  .winbtn { background:transparent; color:var(--dim); border:1px solid var(--line);
+            border-radius:6px; padding:2px 8px; font-size:11px; cursor:pointer; margin-left:4px; }
+  .winbtn.active { color:var(--fg); border-color:#3b4252; background:#1f232b; }
   .ev { font-size:12px; padding:4px 0; border-bottom:1px dashed var(--line); }
   .muted { color:var(--dim); }
   .status { display:inline-flex; align-items:center; gap:6px; margin-left:12px;
@@ -71,7 +74,13 @@
 </div>
 
 <div class="card" style="margin-top:16px">
-  <h2>④ 分数走势（前 6 队）</h2>
+  <h2>④ 分数走势（前 5 队）
+    <span style="float:right;font-weight:400">
+      <button class="winbtn" data-min="10">10 分钟</button>
+      <button class="winbtn active" data-min="30">30 分钟</button>
+      <button class="winbtn" data-min="0">全部</button>
+    </span>
+  </h2>
   <svg id="chart"></svg>
   <div id="legend" class="legend"></div>
 </div>
@@ -164,10 +173,40 @@ async function refresh(){
 
   renderTbestPanel(times, polls);
 
-  drawChart(times, polls, {oN,oSc}, last);
+  chartData = { times, polls, f: { oN, oSc }, last };
+  renderChartFromState();
   refreshTbest(times, polls);
   refreshTbEvents(times, polls);
 }
+
+// ---- chart time window ------------------------------------------------
+let chartWindowMin = 30;
+let chartData = null;
+
+function renderChartFromState(){
+  if(!chartData) return;
+  const { times, polls, f, last } = chartData;
+  let ts = times;
+  if(chartWindowMin > 0 && times.length > 2){
+    const end = new Date(String(times[times.length-1]).replace(' ','T')).getTime();
+    const cutoff = end - chartWindowMin * 60000;
+    ts = times.filter(t => {
+      const m = new Date(String(t).replace(' ','T')).getTime();
+      return m >= cutoff;
+    });
+    if(ts.length < 2) ts = times.slice(-2);
+  }
+  drawChart(ts, polls, f, ts[ts.length-1]);
+}
+
+document.querySelectorAll('.winbtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.winbtn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    chartWindowMin = parseInt(btn.dataset.min, 10);
+    renderChartFromState();
+  });
+});
 
 async function renderTbestPanel(times, polls){
   const box = document.getElementById('events');
