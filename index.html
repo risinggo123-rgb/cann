@@ -32,11 +32,20 @@
               vertical-align:middle; border-radius:2px; }
   .ev { font-size:12px; padding:4px 0; border-bottom:1px dashed var(--line); }
   .muted { color:var(--dim); }
+  .status { display:inline-flex; align-items:center; gap:6px; margin-left:12px;
+            padding:2px 10px; border:1px solid var(--line); border-radius:999px; font-size:12px; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--up); }
+  .dot.stale { background:var(--warn); }
+  tbody tr:nth-child(even) { background:rgba(255,255,255,0.015); }
+  tbody tr.r1 td:first-child { color:#e3b341; font-weight:700; }
+  tbody tr.r2 td:first-child { color:#c9d1d9; font-weight:700; }
+  tbody tr.r3 td:first-child { color:#a371f7; font-weight:700; }
 </style>
 </head>
 <body>
 <h1>CANN 决赛 · 榜单与提交监控</h1>
-<div class="sub">数据来源：monitor_log.csv / monitor_events.csv　·　每 15 秒自动刷新</div>
+<div class="sub">数据来源：monitor_log.csv / monitor_events.csv　·　每 15 秒自动刷新
+  <span id="status" class="status"><span class="dot"></span><span id="statusText">连接中…</span></span></div>
 
 <div class="card" style="padding:20px;margin-bottom:16px">
   <h2 style="font-size:15px;color:#e6e8ee">① 全局 tbest 推断（主）</h2>
@@ -128,6 +137,17 @@ async function refresh(){
   const cur = polls.get(last)||[], old = prev?polls.get(prev)||[]:[];
   const oldMap = new Map(old.map(r=>[r[oU], r]));
 
+  // header status: data age
+  (function(){
+    const txt = document.getElementById('statusText');
+    const dot = document.querySelector('#status .dot');
+    if(!txt || !last) return;
+    const d = new Date(String(last).replace(' ','T'));
+    const age = Math.max(0, Math.round((Date.now() - d.getTime())/1000));
+    txt.textContent = `数据 ${last.slice(11)} · 延迟 ${age}s · ${times.length} 轮`;
+    if(dot) dot.className = 'dot' + (age > 180 ? ' stale' : '');
+  })();
+
   cur.sort((a,b)=> (+a[oR]) - (+b[oR]));
   const tb = document.querySelector('#board tbody');
   tb.innerHTML = cur.map(r=>{
@@ -135,7 +155,8 @@ async function refresh(){
     const d = o ? (+r[oSc] - +o[oSc]) : 0;
     const cls = d>1e-9?'up':(d<-1e-9?'down':'muted');
     const dtxt = o && Math.abs(d)>1e-9 ? (d>0?'+':'')+d.toFixed(2) : '';
-    return `<tr><td>${r[oR]}</td><td>${r[oN]||r[oU]}</td>
+    const rk = +r[oR];
+    return `<tr class="${rk<=3?'r'+rk:''}"><td>${r[oR]}</td><td>${r[oN]||r[oU]}</td>
       <td class="num">${(+r[oSc]).toFixed(2)}</td>
       <td class="num ${cls}">${dtxt}</td>
       <td class="muted">${fmtTime(r[oC])}</td></tr>`;
