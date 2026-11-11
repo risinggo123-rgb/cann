@@ -129,7 +129,7 @@ async function refresh(){
   renderTbestPanel(times, polls);
 
   drawChart(times, polls, {oN,oSc}, last);
-  refreshTbest();
+  refreshTbest(times, polls);
   refreshTbEvents(times, polls);
 }
 
@@ -213,12 +213,24 @@ async function refreshTbEvents(times, polls){
     : '<div class="muted">尚未观察到公开 case 的全局 tbest 变化</div>';
 }
 
-async function refreshTbest(){
+async function refreshTbest(times, polls){
   const box = document.getElementById('tbest');
   let rows;
   try { rows = await loadCSV('infer_report.csv'); }
-  catch(e){ return; }
-  if(rows.length < 2){ return; }
+  catch(e){ rows = null; }
+  const lastTs = times && times.length ? times[times.length-1] : '';
+  const nTeams = polls && lastTs ? (polls.get(lastTs)||[]).length : 0;
+  const status = `<div class="muted" style="font-size:12px;margin-bottom:8px">
+     监控中：已采样 <b>${times?times.length:0}</b> 轮 · <b>${nTeams}</b> 支队伍 ·
+     最近采样 ${lastTs?lastTs.slice(11):'—'}（每 30 秒一轮）</div>`;
+  if(!rows || rows.length < 2){
+    box.innerHTML = status +
+      `<div style="font-size:15px;margin:6px 0">尚未发生隐藏 tbest 刷新事件</div>
+       <div class="muted" style="font-size:12px">
+       判定条件：同一轮里 ≥3 支队伍分数同向下降、且没有任何队伍换 submission_id。<br>
+       出现后这里会显示 相对指数、r、95% CI、R²。</div>`;
+    return;
+  }
   const head = rows[0], body = rows.slice(1);
   const idx = n => head.indexOf(n);
   const last = body[body.length-1];
@@ -227,8 +239,8 @@ async function refreshTbest(){
         iLo=idx('ci_low'), iHi=idx('ci_high'), iR2=idx('r2'), iRmse=idx('rmse');
   const cum = +last[iCum], r = +last[iR];
   const dir = cum > 1 ? '变慢（tbest 变大）' : (cum < 1 ? '变快（tbest 变小）' : '不变');
-  box.innerHTML =
-    `<div style="font-size:20px;margin-bottom:6px">
+  box.innerHTML = status +
+    `<div style="font-size:26px;margin:6px 0 8px">
        相对指数 <b>${cum.toFixed(3)}×</b>
        <span class="muted" style="font-size:12px">（基准=观测起点）</span></div>
      <div class="muted" style="font-size:12px">
