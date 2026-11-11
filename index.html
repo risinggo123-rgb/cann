@@ -222,7 +222,7 @@ async function refreshTbest(times, polls){
   const nTeams = polls && lastTs ? (polls.get(lastTs)||[]).length : 0;
   const status = `<div class="muted" style="font-size:12px;margin-bottom:8px">
      监控中：已采样 <b>${times?times.length:0}</b> 轮 · <b>${nTeams}</b> 支队伍 ·
-     最近采样 ${lastTs?lastTs.slice(11):'—'}（每 30 秒一轮）</div>`;
+     最近采样 ${lastTs?lastTs.slice(11):'—'}（每 10 秒采样一轮）</div>`;
   if(!rows || rows.length < 2){
     box.innerHTML = status +
       `<div style="font-size:15px;margin:6px 0">尚未发生隐藏 tbest 刷新事件</div>
