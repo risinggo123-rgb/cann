@@ -37,7 +37,7 @@
     </tr></thead><tbody></tbody></table>
   </div>
   <div class="card">
-    <h2>事件流（提交 / tbest 刷新）</h2>
+    <h2>全局 tbest（公开 case，µs）</h2>
     <div id="events"></div>
   </div>
 </div>
@@ -126,23 +126,45 @@ async function refresh(){
       <td class="muted">${fmtTime(r[oC])}</td></tr>`;
   }).join('');
 
-  // events
-  const eh = evt[0]||[], er = evt.slice(-40).reverse();
-  const eT=eh.indexOf('ts_bj'),eK=eh.indexOf('kind'),eN=eh.indexOf('team'),
-        eO=eh.indexOf('score_old'),eS2=eh.indexOf('score_new'),eNote=eh.indexOf('note');
-  document.getElementById('events').innerHTML = er.map(r=>{
-    const kind=r[eK];
-    const tag = kind==='submit'
-      ? '<span class="tag up">提交</span>'
-      : '<span class="tag warn">tbest 刷新</span>';
-    const d=(+r[eS2]-+r[eO]).toFixed(2);
-    return `<div class="ev">${r[eT].slice(11)} ${tag} <b>${r[eN]}</b>
-      <span class="muted">${(+r[eO]).toFixed(2)} → ${(+r[eS2]).toFixed(2)} (${d})</span></div>`;
-  }).join('') || '<div class="muted">暂无事件</div>';
+  renderTbestPanel(times, polls);
 
   drawChart(times, polls, {oN,oSc}, last);
   refreshTbest();
   refreshTbEvents(times, polls);
+}
+
+async function renderTbestPanel(times, polls){
+  const box = document.getElementById('events');
+  let rows;
+  try { rows = await loadCSV('tbest_log.csv'); }
+  catch(e){ box.innerHTML = '<div class="muted">等待 tbest_log.csv…</div>'; return; }
+  if(rows.length < 2){ box.innerHTML = '<div class="muted">等待首个采样…</div>'; return; }
+
+  const head = rows[0], body = rows.slice(1);
+  const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'), iV=head.indexOf('tbest_us');
+  const byTs = new Map();
+  for(const r of body){
+    if(!byTs.has(r[iT])) byTs.set(r[iT], new Map());
+    byTs.get(r[iT]).set(r[iN], parseFloat(r[iV]));
+  }
+  const tsList=[...byTs.keys()].sort();
+  const latest = byTs.get(tsList[tsList.length-1]) || new Map();
+  const prevMap = tsList.length>1 ? byTs.get(tsList[tsList.length-2]) : new Map();
+
+  const cases=[...latest.keys()].sort((a,b)=>a-b);
+  const html = cases.map(ci=>{
+    const v = latest.get(ci);
+    const p = prevMap.get(ci);
+    const d = (p!=null && Math.abs(v-p)>1e-9) ? v-p : 0;
+    const cls = d<0 ? 'up' : (d>0 ? 'down' : 'muted');
+    const dtxt = d ? `${d>0?'+':''}${d.toFixed(2)}` : '';
+    return `<tr><td>case#${ci}</td><td class="num">${v.toFixed(2)}</td>
+            <td class="num ${cls}">${dtxt}</td></tr>`;
+  }).join('');
+  box.innerHTML = `<table><thead><tr><th>用例</th><th class="num">tbest</th>
+                   <th class="num">较上次</th></tr></thead><tbody>${html}</tbody></table>
+                   <div class="muted" style="font-size:11px;margin-top:6px">
+                   数据时间 ${tsList[tsList.length-1].slice(11)}　·　绿=变快，红=变慢</div>`;
 }
 
 async function refreshTbEvents(times, polls){
