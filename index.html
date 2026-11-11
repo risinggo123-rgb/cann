@@ -55,7 +55,8 @@
   <div id="tbest" class="muted">尚无推断数据——需要出现“多队同时变分且无人提交”的刷新事件</div>
   <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
     <div class="muted" style="font-size:12px;margin-bottom:6px">
-      隐藏 10 例（case#6–15）估值：tbest 用外部约值表；本队用时 = 本队隐藏平均 ratio × tbest
+      隐藏 10 例（case#6–15）估值：外部基准 × 隐藏层累计 tbest 指数。
+      各 case 的真实归属无法仅凭总分唯一识别，因此这是隐藏层整体估计，不是逐 case 实测。
     </div>
     <table id="hiddenTb" style="table-layout:fixed">
       <colgroup><col style="width:18%"><col style="width:26%"><col style="width:30%"><col></colgroup>
@@ -297,21 +298,29 @@ bindCalc();
 
 // ---- hidden 10 cases: external tbest priors x our public ratio ----
 const HIDDEN_TBEST_APPROX = [47.3, 38.5, 14.7, 7.4, 5.5, 4.3, 2.05, 1.82, 1.00, 0.43];
-function renderHiddenTable(qOurs, source, tbScale){
+function renderHiddenTable(qOurs, source, tbScale, confidence, ciLow, ciHigh){
   const q = qOurs || 2.30;
   const f = (tbScale && tbScale > 0) ? tbScale : 1.0;
+  const conf = confidence === 'high' ? '较高'
+    : confidence === 'medium' ? '中等'
+    : confidence === 'low' ? '较低' : '待定';
+  const ci = Number.isFinite(+ciLow) && Number.isFinite(+ciHigh)
+    ? ` · 累计 95% CI ${(+ciLow).toFixed(3)}–${(+ciHigh).toFixed(3)}`
+    : '';
   const tb = document.querySelector('#hiddenTb tbody');
   if(!tb) return;
   tb.innerHTML = HIDDEN_TBEST_APPROX.map((v,i)=>{
     const tv = v * f;
     return `<tr><td>case#${i+6}</td><td class="num">${tv.toFixed(2)}</td>
       <td class="num">≈ ${(tv*q).toFixed(2)}</td>
-      <td class="muted" style="font-size:11px">tbest 外部约值 / 用时 估算</td></tr>`;
+      <td class="muted" style="font-size:11px">${conf} · case 归属未知</td></tr>`;
   }).join('');
   const note = document.getElementById('hiddenQ');
   if(note){
     note.textContent = `本队隐藏平均 ratio = ${q.toFixed(3)}×` + (source ? `（${source}）` : '')
-      + `　·　tbest 已按最近刷新比例 ×${f.toFixed(4)} 缩放`;
+      + `　·　外部基准 ×${f.toFixed(4)}`
+      + ci
+      + `　·　<1 表示隐藏 tbest 变快，>1 表示变慢`;
   }
 }
 renderHiddenTable(2.30);
@@ -456,8 +465,8 @@ async function refreshTbest(times, polls){
     box.innerHTML = status + proxy +
       `<div style="font-size:14px;margin:8px 0 4px">尚未发生隐藏 tbest 刷新事件</div>
        <div class="muted" style="font-size:12px">
-       判定条件：同一轮里 ≥3 支队伍分数同向下降、且没有任何队伍换 submission_id。<br>
-       出现后这里会额外显示 相对指数、r、95% CI、R²。</div>`;
+       判定条件：先扣除公开 5 例得分，再要求多个“未换 submission_id”的隐藏分数同向阶跃。<br>
+       公开 case 单独刷新不会被算成隐藏刷新。</div>`;
     return;
   }
   const head = rows[0], body = rows.slice(1);
@@ -467,27 +476,45 @@ async function refreshTbest(times, polls){
         iTeams=(idx('teams_used')>=0?idx('teams_used'):idx('teams_moved')),
         iMed=idx('median_delta'),
         iR=idx('implied_r'), iCum=idx('cumulative_index'),
-        iLo=idx('ci_low'), iHi=idx('ci_high'), iR2=idx('r2'), iRmse=idx('rmse');
+        iLo=idx('ci_low'), iHi=idx('ci_high'),
+        iCumLo=idx('cumulative_ci_low'), iCumHi=idx('cumulative_ci_high'),
+        iAgree=idx('r2'), iConf=idx('confidence');
   const cum = +last[iCum], r = +last[iR];
   const iDir = idx('direction');
   const slowed = iDir >= 0 && String(last[iDir]).indexOf('slower') === 0;
+  const confidence = iConf >= 0 ? last[iConf] : '';
+  const confidenceCn = confidence === 'high' ? '较高'
+    : confidence === 'medium' ? '中等'
+    : confidence === 'low' ? '较低' : '待定';
+  const agree = iAgree >= 0 && last[iAgree] !== ''
+    ? `同向一致率 ${(100 * (+last[iAgree])).toFixed(1)}%`
+    : '';
   window.__tbIdx = cum;
-  renderHiddenTable(window.__hiddenQ, '由本队总分反解', cum);
+  renderHiddenTable(
+    window.__hiddenQ, '由本队总分反解', cum, confidence,
+    iCumLo >= 0 ? last[iCumLo] : NaN,
+    iCumHi >= 0 ? last[iCumHi] : NaN
+  );
   const dir = slowed ? '变慢（可能是违规代码被清理，tbest 退回较大值）'
                      : (cum < 1 ? '变快（tbest 变小）' : '不变');
   box.innerHTML = status +
     `<div style="font-size:26px;margin:6px 0 8px">
-       相对指数 <b>${cum.toFixed(3)}×</b>
-       <span class="muted" style="font-size:12px">（基准=观测起点）</span></div>
+       隐藏层累计 tbest 指数 <b>${cum.toFixed(3)}×</b>
+       <span class="muted" style="font-size:12px">（基准=本次监控起点）</span></div>
+     <div style="font-size:15px;margin-bottom:6px">
+       累计 95% CI：${iCumLo >= 0 && last[iCumLo] ? `${(+last[iCumLo]).toFixed(3)}–${(+last[iCumHi]).toFixed(3)}` : '—'}
+       <span class="muted">　·　置信度：<b>${confidenceCn}</b></span></div>
      <div class="muted" style="font-size:12px">
-       最近事件：poll ${last[iPoll]}，${last[iTeams]} 队受影响，
-       Δ中位数 ${(+last[iMed]).toFixed(2)}，推得 r=${r.toFixed(3)}
-       ${iLo>=0 && last[iLo] ? `（95% CI ${last[iLo]}–${last[iHi]}）` : ''}，
-       R²=${iR2>=0 ? last[iR2] : 'n/a'}，RMSE=${iRmse>=0 ? last[iRmse] : 'n/a'}<br>
-       解读：相对起点 tbest ${dir}，约 <b>${cum.toFixed(2)}×</b>
+       最近事件：${last[idx('ts_bj')] ? last[idx('ts_bj')].slice(11) : 'poll '+last[iPoll]}，
+       ${last[iTeams]} 个未换 submission 的样本，
+       隐藏分数和变化中位 ${(+last[iMed]).toFixed(2)}，本次倍率 r=${r.toFixed(4)}
+       ${iLo>=0 && last[iLo] ? `（95% CI ${(+last[iLo]).toFixed(3)}–${(+last[iHi]).toFixed(3)}）` : ''}
+       ${agree ? '，' + agree : ''}<br>
+       解读：相对监控起点，隐藏层 tbest ${dir}，累计约 <b>${cum.toFixed(3)}×</b>
      </div>
      <div class="muted" style="font-size:11px;margin-top:6px">
-       绝对值需锚点（如 122.5 µs）；每队仅一个总分、隐藏 t_i 未知，故只能给趋势与量级。
+       已从总分中精确扣除公开 5 例得分。隐藏 case 的逐例 tbest 和时间仍不可见，
+       故隐藏表只能给隐藏层整体倍率；r&lt;1 是变快，r&gt;1 是变慢/清退。
      </div>`;
 }
 
