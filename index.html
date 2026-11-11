@@ -52,6 +52,11 @@
   <div id="tbest" class="muted">尚无推断数据——需要出现“多队同时变分且无人提交”的刷新事件</div>
 </div>
 
+<div class="card" style="margin-top:16px">
+  <h2>全局 tbest 刷新 · 具体到 case（公开 case 精确，隐藏 case 为推断）</h2>
+  <div id="tbevents" class="muted">等待数据…</div>
+</div>
+
 <script src="data.js"></script>
 <script>
 function parseCSV(text){
@@ -137,6 +142,53 @@ async function refresh(){
 
   drawChart(times, polls, {oN,oSc}, last);
   refreshTbest();
+  refreshTbEvents(times, polls);
+}
+
+async function refreshTbEvents(times, polls){
+  const box = document.getElementById('tbevents');
+  let rows;
+  try { rows = await loadCSV('tbest_log.csv'); }
+  catch(e){ return; }
+  if(rows.length < 2){ return; }
+  const head = rows[0], body = rows.slice(1);
+  const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'), iV=head.indexOf('tbest_us');
+
+  const byTs = new Map();
+  for(const r of body){
+    if(!byTs.has(r[iT])) byTs.set(r[iT], new Map());
+    byTs.get(r[iT]).set(r[iN], parseFloat(r[iV]));
+  }
+  const tsList = [...byTs.keys()].sort();
+  const out = [];
+
+  for(let i=1;i<tsList.length;i++){
+    const cur = byTs.get(tsList[i]), prev = byTs.get(tsList[i-1]);
+    const changed = [];
+    for(const [ci,v] of cur){
+      const p = prev.get(ci);
+      if(p!=null && Math.abs(v-p) > 1e-9) changed.push({ci, from:p, to:v});
+    }
+    if(!changed.length) continue;
+
+    // who submitted in this poll?
+    const prevPoll = polls.get(tsList[i-1]) || [];
+    const curPoll  = polls.get(tsList[i]) || [];
+    const oldSid = new Map(prevPoll.map(r=>[r[4], r[5]]));   // user_id -> submission_id
+    const subs = curPoll.filter(r => oldSid.has(r[4]) && oldSid.get(r[4]) !== r[5])
+                         .map(r => r[2]);
+    const who = subs.length ? subs.slice(0,3).join('、') : '（无新提交→他人刷新）';
+
+    for(const c of changed){
+      const d = c.to - c.from;
+      out.push(`<div class="ev">${tsList[i].slice(11)} <span class="tag up">case#${c.ci}</span>
+        <b>${who}</b> 刷新全局 tbest：
+        <span class="muted">${c.from.toFixed(2)} → ${c.to.toFixed(2)} µs
+        (${d>0?'+':''}${d.toFixed(2)})</span></div>`);
+    }
+  }
+  box.innerHTML = out.length ? out.slice(-25).reverse().join('')
+    : '<div class="muted">尚未观察到公开 case 的全局 tbest 变化</div>';
 }
 
 async function refreshTbest(){
