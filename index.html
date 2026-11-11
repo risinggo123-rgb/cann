@@ -88,6 +88,8 @@
 <div class="card" style="margin-top:16px">
   <h2>⑤ 全局 tbest 刷新历史 · 具体到 case</h2>
   <div id="tbevents" class="muted">等待数据…</div>
+  <h2 style="margin-top:14px">今日全部 tbest 变更（含你不在线时）</h2>
+  <div id="tbday" class="muted">等待数据…</div>
 </div>
 
 <script src="data.js"></script>
@@ -177,6 +179,28 @@ async function refresh(){
   renderChartFromState();
   refreshTbest(times, polls);
   refreshTbEvents(times, polls);
+  refreshTbDay();
+}
+
+async function refreshTbDay(){
+  const box = document.getElementById('tbday');
+  if(!box) return;
+  let rows;
+  try { rows = await loadCSV('tbest_changes.csv'); }
+  catch(e){ box.innerHTML = '<div class="muted">暂无变更记录</div>'; return; }
+  if(!rows || rows.length < 2){ box.innerHTML = '<div class="muted">今日暂无 tbest 变更</div>'; return; }
+  const head = rows[0], body = rows.slice(1);
+  const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'),
+        iV=head.indexOf('tbest_us'), iP=head.indexOf('prev_us'), iD=head.indexOf('delta_us');
+  const html = body.slice(-40).reverse().map(r=>{
+    const d = parseFloat(r[iD]);
+    const cls = d<0?'up':(d>0?'down':'muted');
+    return `<div class="ev">${r[iT].slice(5)} <span class="tag up">case#${r[iN]}</span>
+      <span class="muted">${parseFloat(r[iP]).toFixed(2)} → ${parseFloat(r[iV]).toFixed(2)} µs</span>
+      <span class="${cls}">${d>0?'+':''}${d.toFixed(2)}</span></div>`;
+  }).join('');
+  box.innerHTML = html + `<div class="muted" style="font-size:11px;margin-top:6px">
+    共 ${body.length} 条变更（保留全部历史，不受图表窗口限制）</div>`;
 }
 
 // ---- chart time window ------------------------------------------------
