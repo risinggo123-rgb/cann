@@ -53,6 +53,15 @@
 <div class="card" style="padding:20px;margin-bottom:16px">
   <h2 style="font-size:15px;color:#e6e8ee">① 全局 tbest 推断（主）</h2>
   <div id="tbest" class="muted">尚无推断数据——需要出现“多队同时变分且无人提交”的刷新事件</div>
+  <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13px">
+    <span class="muted">反估本队用时：</span>
+    该 case tbest <input id="tbIn" type="number" step="0.01" value="1.18"
+      style="width:84px;background:#0f1115;color:#e6e8ee;border:1px solid #2b3240;border-radius:5px;padding:2px 6px">
+    µs × 本队 t/tbest <input id="rIn" type="number" step="0.01" value="2.30"
+      style="width:70px;background:#0f1115;color:#e6e8ee;border:1px solid #2b3240;border-radius:5px;padding:2px 6px">
+    → <b id="tOut" style="font-size:15px">—</b>
+    <span class="muted" id="tHint" style="font-size:12px"></span>
+  </div>
 </div>
 
 <div class="grid">
@@ -232,6 +241,27 @@ document.querySelectorAll('.winbtn').forEach(btn=>{
   });
 });
 
+// ---- reverse estimate: our time = tbest * our t/tbest ----------------
+function bindCalc(){
+  const tb = document.getElementById('tbIn');
+  const rt = document.getElementById('rIn');
+  const out = document.getElementById('tOut');
+  const hint = document.getElementById('tHint');
+  if(!tb || !rt) return;
+  const upd = () => {
+    const T = parseFloat(tb.value), q = parseFloat(rt.value);
+    if(!(T > 0) || !(q > 0)){ out.textContent = '—'; hint.textContent = ''; return; }
+    const t = T * q;
+    const s = 100 / (1 + Math.log(q) / Math.log(1.5));
+    out.textContent = t.toFixed(2) + ' µs';
+    hint.textContent = `（该 case 得分 ≈ ${s.toFixed(1)} / 100）`;
+  };
+  tb.addEventListener('input', upd);
+  rt.addEventListener('input', upd);
+  upd();
+}
+bindCalc();
+
 async function renderTbestPanel(times, polls){
   const box = document.getElementById('events');
   try {
@@ -333,17 +363,43 @@ async function refreshTbest(times, polls){
      监控中：已采样 <b>${times?times.length:0}</b> 轮 · <b>${nTeams}</b> 支队伍 ·
      最近采样 ${lastTs?lastTs.slice(11):'—'}（每 10 秒采样一轮）</div>`;
   if(!rows || rows.length < 2){
-    box.innerHTML = status +
-      `<div style="font-size:15px;margin:6px 0">尚未发生隐藏 tbest 刷新事件</div>
+    // fallback: derive the hidden-layer level directly from score arithmetic
+    // 15*score = sum(15 case scores); the 5 public ones are known exactly.
+    let proxy = '';
+    const cur = (polls && lastTs) ? (polls.get(lastTs) || []) : [];
+    const vals = [];
+    for (const r of cur) {
+      const sc = parseFloat(r[5]), ps = parseFloat(r[8]);
+      if (!isFinite(sc) || !isFinite(ps) || ps <= 0) continue;
+      const hiddenAvg = (15 * sc - ps) / 10;      // mean score of the 10 hidden cases
+      if (hiddenAvg > 0.1 && hiddenAvg < 99) {
+        vals.push({ s: hiddenAvg, r: Math.pow(1.5, 100 / hiddenAvg - 1) });
+      }
+    }
+    if (vals.length >= 3) {
+      vals.sort((a,b)=>a.s-b.s);
+      const m = vals[Math.floor(vals.length/2)];
+      proxy = `<div style="font-size:26px;margin:8px 0 4px">
+          隐藏 10 例平均得分 <b>${m.s.toFixed(1)}</b> <span class="muted" style="font-size:13px">/ 100</span>
+        </div>
+        <div style="font-size:15px;margin-bottom:6px">
+          对应平均 t/tbest ≈ <b>${m.r.toFixed(2)}×</b>
+          <span class="muted" style="font-size:12px">（样本 ${vals.length} 队，取中位数）</span>
+        </div>`;
+    }
+    box.innerHTML = status + proxy +
+      `<div style="font-size:14px;margin:8px 0 4px">尚未发生隐藏 tbest 刷新事件</div>
        <div class="muted" style="font-size:12px">
        判定条件：同一轮里 ≥3 支队伍分数同向下降、且没有任何队伍换 submission_id。<br>
-       出现后这里会显示 相对指数、r、95% CI、R²。</div>`;
+       出现后这里会额外显示 相对指数、r、95% CI、R²。</div>`;
     return;
   }
   const head = rows[0], body = rows.slice(1);
   const idx = n => head.indexOf(n);
   const last = body[body.length-1];
-  const iPoll=idx('poll'), iTeams=idx('teams_moved'), iMed=idx('median_delta'),
+  const iPoll=idx('poll'),
+        iTeams=(idx('teams_used')>=0?idx('teams_used'):idx('teams_moved')),
+        iMed=idx('median_delta'),
         iR=idx('implied_r'), iCum=idx('cumulative_index'),
         iLo=idx('ci_low'), iHi=idx('ci_high'), iR2=idx('r2'), iRmse=idx('rmse');
   const cum = +last[iCum], r = +last[iR];
