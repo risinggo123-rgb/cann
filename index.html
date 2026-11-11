@@ -478,7 +478,8 @@ async function refreshTbest(times, polls){
         iR=idx('implied_r'), iCum=idx('cumulative_index'),
         iLo=idx('ci_low'), iHi=idx('ci_high'),
         iCumLo=idx('cumulative_ci_low'), iCumHi=idx('cumulative_ci_high'),
-        iAgree=idx('r2'), iConf=idx('confidence');
+        iAgree=idx('r2'), iConf=idx('confidence'),
+        iMajUp=idx('majority_up'), iMajFrac=idx('majority_fraction');
   const cum = +last[iCum], r = +last[iR];
   const iDir = idx('direction');
   const slowed = iDir >= 0 && String(last[iDir]).indexOf('slower') === 0;
@@ -488,6 +489,12 @@ async function refreshTbest(times, polls){
     : confidence === 'low' ? '较低' : '待定';
   const agree = iAgree >= 0 && last[iAgree] !== ''
     ? `同向一致率 ${(100 * (+last[iAgree])).toFixed(1)}%`
+    : '';
+  const majority = iMajUp >= 0
+    ? `${last[iMajUp] === 'yes' ? '上涨' : '下降'}`
+      + (iMajFrac >= 0 && last[iMajFrac] !== ''
+        ? ` ${(100 * (+last[iMajFrac])).toFixed(1)}%`
+        : '')
     : '';
   window.__tbIdx = cum;
   renderHiddenTable(
@@ -509,7 +516,8 @@ async function refreshTbest(times, polls){
        ${last[iTeams]} 个未换 submission 的样本，
        隐藏分数和变化中位 ${(+last[iMed]).toFixed(2)}，本次倍率 r=${r.toFixed(4)}
        ${iLo>=0 && last[iLo] ? `（95% CI ${(+last[iLo]).toFixed(3)}–${(+last[iHi]).toFixed(3)}）` : ''}
-       ${agree ? '，' + agree : ''}<br>
+       ${agree ? '，' + agree : ''}
+       ${majority ? `，多数队伍分数${majority}` : ''}<br>
        解读：相对监控起点，隐藏层 tbest ${dir}，累计约 <b>${cum.toFixed(3)}×</b>
      </div>
      <div class="muted" style="font-size:11px;margin-top:6px">
