@@ -469,9 +469,12 @@ async function refreshTbest(times, polls){
         iR=idx('implied_r'), iCum=idx('cumulative_index'),
         iLo=idx('ci_low'), iHi=idx('ci_high'), iR2=idx('r2'), iRmse=idx('rmse');
   const cum = +last[iCum], r = +last[iR];
+  const iDir = idx('direction');
+  const slowed = iDir >= 0 && String(last[iDir]).indexOf('slower') === 0;
   window.__tbIdx = cum;
   renderHiddenTable(window.__hiddenQ, '由本队总分反解', cum);
-  const dir = cum > 1 ? '变慢（tbest 变大）' : (cum < 1 ? '变快（tbest 变小）' : '不变');
+  const dir = slowed ? '变慢（可能是违规代码被清理，tbest 退回较大值）'
+                     : (cum < 1 ? '变快（tbest 变小）' : '不变');
   box.innerHTML = status +
     `<div style="font-size:26px;margin:6px 0 8px">
        相对指数 <b>${cum.toFixed(3)}×</b>
