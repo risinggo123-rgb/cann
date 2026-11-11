@@ -133,6 +133,27 @@ async function loadCSV(name){
   return parseCSV(await r.text());
 }
 
+async function reloadDataBundle(){
+  // The initial <script src="data.js"> is cached by the browser. Re-fetch it
+  // explicitly on every refresh, otherwise window.MON_DATA never changes and
+  // the visible tbest values stay frozen at the first page load.
+  try {
+    const r = await fetch('data.js?t=' + Date.now(), {cache:'no-store'});
+    if(!r.ok) return false;
+    let text = (await r.text()).trim();
+    const prefix = 'window.MON_DATA=';
+    if(text.startsWith(prefix)){
+      text = text.slice(prefix.length).trim();
+      if(text.endsWith(';')) text = text.slice(0, -1);
+      window.MON_DATA = JSON.parse(text);
+      return true;
+    }
+  } catch(err) {
+    // file:// or a temporary CDN failure: keep the last complete bundle.
+  }
+  return false;
+}
+
 function fmtTime(iso){
   if(!iso) return '';
   const d = new Date(iso);
@@ -141,6 +162,7 @@ function fmtTime(iso){
 }
 
 async function refresh(){
+  await reloadDataBundle();
   let log, evt;
   try { log = await loadCSV('monitor_log.csv'); }
   catch(e){ document.querySelector('#board tbody').innerHTML =
