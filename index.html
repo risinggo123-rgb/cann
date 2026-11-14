@@ -466,13 +466,21 @@ async function renderTbestPanel(times, polls){
       const ch=changeRows[0], cb=changeRows.slice(1);
       const iCT=ch.indexOf('ts_bj'), iCI=ch.indexOf('case_index'),
             iCV=ch.indexOf('tbest_us'), iCP=ch.indexOf('prev_us'),
-            iCD=ch.indexOf('delta_us');
+            iCD=ch.indexOf('delta_us'), iCPct=ch.indexOf('delta_pct'),
+            iCCand=ch.indexOf('candidate_team'), iCRank=ch.indexOf('candidate_rank'),
+            iCB=ch.indexOf('candidate_rank_before'), iCEv=ch.indexOf('evidence'),
+            iCSub=ch.indexOf('submitted_teams'), iCMove=ch.indexOf('rank_movers'),
+            iCCount=ch.indexOf('count');
       for(const r of cb){
         const ci=parseInt(r[iCI],10);
         const old=changes.get(ci) || {count:0};
         changes.set(ci, {
           ts:r[iCT], prev:parseFloat(r[iCP]), value:parseFloat(r[iCV]),
-          delta:parseFloat(r[iCD]), count:(old.count||0)+1
+          delta:parseFloat(r[iCD]), pct:parseFloat(r[iCPct]),
+          candidate:iCCand>=0?r[iCCand]:'', rank:iCRank>=0?r[iCRank]:'',
+          before:iCB>=0?r[iCB]:'', evidence:iCEv>=0?r[iCEv]:'',
+          submitted:iCSub>=0?r[iCSub]:'', movers:iCMove>=0?r[iCMove]:'',
+          count:iCCount>=0?parseInt(r[iCCount],10):(old.count||0)+1
         });
       }
     }
@@ -539,7 +547,7 @@ async function renderTbestPanel(times, polls){
       ? changedCases.map(([ci,c])=>{
           const pct=c.prev ? (c.value/c.prev-1)*100 : 0;
           const cls=c.delta<0?'up':'down';
-          const a=attrs.get(ci);
+        const a=attrs.get(ci) || c;
           const who=a && a.candidate ? ` · ${a.candidate}` : ' · 无精确持有者';
           return `<span class="pill ${cls}">case#${ci} ${c.prev.toFixed(4)}→${c.value.toFixed(4)}
             ${c.delta>0?'+':''}${c.delta.toFixed(4)} µs${who}</span>`;
@@ -558,7 +566,7 @@ async function renderTbestPanel(times, polls){
         const d=c.value-c.prev;
         const pct=c.prev ? (d/c.prev)*100 : 0;
         const cls=d<0?'up':(d>0?'down':'muted');
-        const a=attrs.get(ci);
+        const a=attrs.get(ci) || c;
         const ctx=pollContext(c.ts);
         let attribution='无法唯一归因';
         if(a && a.candidate){
