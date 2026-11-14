@@ -11,7 +11,7 @@
          font:14px/1.5 "Segoe UI",system-ui,sans-serif; }
   h1 { font-size:18px; margin:0 0 4px; }
   .sub { color:var(--dim); font-size:12px; margin-bottom:16px; }
-  .grid { display:grid; grid-template-columns: 1.75fr 1fr; gap:16px; }
+  .grid { display:grid; grid-template-columns:1fr; gap:16px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
   .card h2 { font-size:13px; margin:0 0 10px; color:var(--dim); font-weight:600; }
   table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
@@ -101,7 +101,7 @@
       </tr></thead><tbody></tbody></table>
   </div>
   <div class="card">
-    <h2 id="publicHead">③ 公开 case 的全局 tbest（µs）</h2>
+    <h2 id="publicHead">③ 公开 case#1–15 tbest 当前值与最近变化（µs）</h2>
     <div id="events"></div>
   </div>
 </div>
@@ -256,7 +256,9 @@ async function refresh(){
   })();
   const rankRefMap = new Map(rankRefRows.map(r=>[r[oU], r]));
   const pubHead = document.getElementById('publicHead');
-  if(pubHead) pubHead.textContent = publicCount > 0 ? `③ 公开 case 的全局 tbest（${publicCount} 例，µs）` : '③ 公开 case 的全局 tbest';
+  if(pubHead) pubHead.textContent = publicCount > 0
+    ? `③ 公开 case#1–${publicCount} tbest 当前值与最近变化（µs）`
+    : '③ 公开 case 的全局 tbest';
   const scope = document.getElementById('hiddenScope');
   if(scope){
     scope.textContent = `当前共 ${caseCount} 个测试点：公开 ${publicCount} 个、隐藏 ${hiddenCount} 个。`
@@ -439,10 +441,12 @@ renderHiddenTable(2.30, '', 1, '', NaN, NaN, 20, 15, 5);
 async function renderTbestPanel(times, polls){
   const box = document.getElementById('events');
   try {
-    let rows;
+    let rows, changeRows;
     try { rows = await loadCSV('tbest_log.csv'); }
     catch(e){ box.innerHTML = '<div class="muted">data.js 里没有 tbest_log.csv（等待下一轮推送）</div>'; return; }
     if(!rows || rows.length < 2){ box.innerHTML = '<div class="muted">等待首个采样…</div>'; return; }
+    try { changeRows = await loadCSV('tbest_changes.csv'); }
+    catch(e){ changeRows = []; }
 
     const head = rows[0];
     const body = rows.slice(1).filter(r => r.length >= 4);
@@ -450,33 +454,65 @@ async function renderTbestPanel(times, polls){
           iV=head.indexOf('tbest_us'), iC=head.indexOf('case_id');
     if(iT<0||iN<0||iV<0){ box.innerHTML = '<div class="muted">tbest_log 表头异常</div>'; return; }
 
-    // rows are appended in time order: take the last timestamp block, and the one before it
+    // Latest current snapshot for every public case.
     const lastTs = body[body.length-1][iT];
     const cur = body.filter(r => r[iT] === lastTs);
-    const prevTs = body.filter(r => r[iT] !== lastTs).slice(-1)[0];
-    const prev = prevTs ? body.filter(r => r[iT] === prevTs[iT]) : [];
-    const prevMap = {};
-    prev.forEach(r => { prevMap[r[iN]] = parseFloat(r[iV]); });
+    const currentMap = new Map(cur.map(r=>[parseInt(r[iN],10), parseFloat(r[iV])]));
+    const changes = new Map();
+    if(changeRows && changeRows.length > 1){
+      const ch=changeRows[0], cb=changeRows.slice(1);
+      const iCT=ch.indexOf('ts_bj'), iCI=ch.indexOf('case_index'),
+            iCV=ch.indexOf('tbest_us'), iCP=ch.indexOf('prev_us'),
+            iCD=ch.indexOf('delta_us');
+      for(const r of cb){
+        const ci=parseInt(r[iCI],10);
+        const old=changes.get(ci) || {count:0};
+        changes.set(ci, {
+          ts:r[iCT], prev:parseFloat(r[iCP]), value:parseFloat(r[iCV]),
+          delta:parseFloat(r[iCD]), count:(old.count||0)+1
+        });
+      }
+    }
+    const changedCases = [...changes.entries()].sort((a,b)=>a[0]-b[0]);
+    const changedHtml = changedCases.length
+      ? changedCases.map(([ci,c])=>{
+          const pct=c.prev ? (c.value/c.prev-1)*100 : 0;
+          const cls=c.delta<0?'up':'down';
+          return `<span class="pill ${cls}">case#${ci} ${c.prev.toFixed(4)}→${c.value.toFixed(4)}
+            ${c.delta>0?'+':''}${c.delta.toFixed(4)} µs</span>`;
+        }).join(' ')
+      : '<span class="muted">监控期间尚无公开 case tbest 变更</span>';
 
-    const html = cur
-      .sort((a,b)=> parseFloat(a[iN]) - parseFloat(b[iN]))
-      .map(r=>{
-        const ci = r[iN], v = parseFloat(r[iV]);
-        const p = prevMap[ci];
-        const d = (p!=null && Math.abs(v-p)>1e-9) ? v-p : 0;
-        const cls = d<0 ? 'up' : (d>0 ? 'down' : 'muted');
-        const dtxt = d ? `${d>0?'+':''}${d.toFixed(2)}` : '—';
-        const cid = iC >= 0 ? String(r[iC] || '').slice(-6) : '';
-        return `<tr><td>case#${ci}</td><td class="muted">…${cid}</td><td class="num">${v.toFixed(2)}</td>
-                <td class="num ${cls}">${dtxt}</td></tr>`;
+    const html = [...currentMap.entries()]
+      .sort((a,b)=>a[0]-b[0])
+      .map(([ci,v])=>{
+        const c=changes.get(ci);
+        if(!c){
+          return `<tr><td>case#${ci}</td><td class="num"><b>${v.toFixed(4)}</b></td>
+            <td class="num">—</td><td class="num muted">—</td>
+            <td class="num muted">—</td><td class="muted">无变化</td></tr>`;
+        }
+        const d=c.value-c.prev;
+        const pct=c.prev ? (d/c.prev)*100 : 0;
+        const cls=d<0?'up':(d>0?'down':'muted');
+        return `<tr class="event-row-changed"><td>case#${ci}</td>
+          <td class="num"><b>${v.toFixed(4)}</b></td>
+          <td class="num">${c.prev.toFixed(4)}</td>
+          <td class="num ${cls}"><b>${d>0?'+':''}${d.toFixed(4)}</b></td>
+          <td class="num ${cls}">${pct>0?'+':''}${pct.toFixed(3)}%</td>
+          <td class="muted">${c.ts.slice(5,16)} <span class="pill">${c.count} 次</span></td></tr>`;
       }).join('');
 
-    box.innerHTML = `<table style="table-layout:fixed">
-      <colgroup><col style="width:24%"><col style="width:26%"><col style="width:28%"><col style="width:22%"></colgroup>
-      <thead><tr><th>测试点</th><th>case_id</th><th class="num">tbest (µs)</th><th class="num">较上次</th></tr></thead>
+    box.innerHTML = `<div style="font-size:12px;margin-bottom:8px;line-height:1.9">
+      最近真实变更：${changedHtml}</div>
+      <table class="event-table" style="table-layout:fixed">
+      <colgroup><col style="width:13%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:13%"><col></colgroup>
+      <thead><tr><th>测试点</th><th class="num">当前 tbest</th><th class="num">变更前</th>
+        <th class="num">变化量</th><th class="num">变化比例</th><th>最近变更时间</th></tr></thead>
       <tbody>${html}</tbody></table>
       <div class="muted" style="font-size:11px;margin-top:6px">
-      数据时间 ${lastTs.slice(11)}　·　绿=变快，红=变慢</div>`;
+      当前数据时间 ${lastTs.slice(11)}　·　绿=变快，红=变慢　·　“无变化”表示本次监控期间尚未捕获到该案 tbest 更新
+      </div>`;
 
     // feed the reverse-estimate dropdown: case -> tbest
     const sel = document.getElementById('caseSel');
