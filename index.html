@@ -96,7 +96,7 @@
         <col class="c-rank"><col><col class="c-rankmove"><col class="c-score"><col class="c-delta"><col class="c-time">
       </colgroup>
       <thead><tr>
-        <th class="num">排名</th><th>队伍</th><th class="num">排名变化</th><th class="num">分数</th>
+        <th class="num">排名</th><th>队伍</th><th class="num">近10分钟</th><th class="num">分数</th>
         <th class="num">分数变化</th><th class="num">提交时间</th>
       </tr></thead><tbody></tbody></table>
   </div>
@@ -238,6 +238,23 @@ async function refresh(){
                       oldCounts[1] === publicCount &&
                       oldCounts[2] === hiddenCount;
   const oldMap = new Map((sameTestSet ? old : []).map(r=>[r[oU], r]));
+  const rankRefRows = (() => {
+    if(times.length < 2) return [];
+    const endMs = new Date(String(last).replace(' ','T')).getTime();
+    const cutoffMs = endMs - 10 * 60000;
+    let refIdx = times.length - 2;
+    for(let i=0;i<times.length-1;i++){
+      const m = new Date(String(times[i]).replace(' ','T')).getTime();
+      if(m <= cutoffMs) refIdx = i;
+      else break;
+    }
+    const candidates = polls.get(times[refIdx]) || [];
+    if(!candidates.length) return [];
+    const c = countOf(candidates[0]);
+    return c[0] === caseCount && c[1] === publicCount && c[2] === hiddenCount
+      ? candidates : [];
+  })();
+  const rankRefMap = new Map(rankRefRows.map(r=>[r[oU], r]));
   const pubHead = document.getElementById('publicHead');
   if(pubHead) pubHead.textContent = publicCount > 0 ? `③ 公开 case 的全局 tbest（${publicCount} 例，µs）` : '③ 公开 case 的全局 tbest';
   const scope = document.getElementById('hiddenScope');
@@ -283,7 +300,7 @@ async function refresh(){
     const dtxt = o && Math.abs(d)>1e-9 ? (d>0?'+':'')+d.toFixed(2) : '';
     const rk = +r[oR];
     return `<tr class="${rk<=3?'r'+rk:''}"><td class="num rank-no">#${r[oR]}</td><td>${r[oN]||r[oU]}</td>
-      <td class="num">${rankMoveCell(o && o[oR], r[oR])}</td>
+      <td class="num">${rankMoveCell(rankRefMap.get(r[oU])?.[oR], r[oR])}</td>
       <td class="num">${(+r[oSc]).toFixed(2)}</td>
       <td class="num ${cls}">${dtxt}</td>
       <td class="muted">${fmtTime(r[oC])}</td></tr>`;
