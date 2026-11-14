@@ -20,7 +20,7 @@
   th { color:var(--dim); font-weight:500; font-size:12px; }
   td.num { text-align:right; font-variant-numeric:tabular-nums; }
   th.num { text-align:right; }
-  #board col.c-rank { width:38px; }
+  #board col.c-rank { width:76px; }
   #board col.c-score { width:72px; }
   #board col.c-delta { width:62px; }
   #board col.c-time { width:104px; }
@@ -34,6 +34,7 @@
             border-radius:6px; padding:2px 8px; font-size:11px; cursor:pointer; margin-left:4px; }
   .winbtn.active { color:var(--fg); border-color:#3b4252; background:#1f232b; }
   .ev { font-size:12px; padding:4px 0; border-bottom:1px dashed var(--line); }
+  .move { font-size:10px; margin-left:4px; font-variant-numeric:tabular-nums; }
   .muted { color:var(--dim); }
   .status { display:inline-flex; align-items:center; gap:6px; margin-left:12px;
             padding:2px 10px; border:1px solid var(--line); border-radius:999px; font-size:12px; }
@@ -47,7 +48,7 @@
 </head>
 <body>
 <h1>CANN 决赛 · 榜单与提交监控</h1>
-<div class="sub">数据来源：monitor_log.csv / monitor_events.csv　·　每 15 秒自动刷新
+<div class="sub">数据来源：monitor_log.csv / infer_report.csv　·　每 15 秒自动刷新
   <span id="status" class="status"><span class="dot"></span><span id="statusText">连接中…</span></span></div>
 
 <div class="card" style="padding:20px;margin-bottom:16px">
@@ -58,9 +59,9 @@
       正在读取当前公开/隐藏测试点数量…
     </div>
     <table id="hiddenTb" style="table-layout:fixed">
-      <colgroup><col style="width:18%"><col style="width:26%"><col style="width:30%"><col></colgroup>
-      <thead><tr><th>隐藏点</th><th class="num">tbest 约值 (µs)</th>
-        <th class="num">本队用时（估）</th><th>置信度</th></tr></thead>
+      <colgroup><col style="width:18%"><col style="width:31%"><col style="width:31%"><col></colgroup>
+      <thead><tr><th>隐藏点</th><th class="num">tbest 预测（相对）</th>
+        <th class="num">最近刷新倍率</th><th>置信度</th></tr></thead>
       <tbody></tbody>
     </table>
     <div id="hiddenQ" class="muted" style="font-size:11px;margin-top:5px">
@@ -78,7 +79,7 @@
         <col class="c-rank"><col><col class="c-score"><col class="c-delta"><col class="c-time">
       </colgroup>
       <thead><tr>
-        <th class="num">#</th><th>队伍</th><th class="num">分数</th>
+        <th class="num">排名</th><th>队伍</th><th class="num">分数</th>
         <th class="num">变化</th><th class="num">提交时间</th>
       </tr></thead><tbody></tbody></table>
   </div>
@@ -101,10 +102,8 @@
 </div>
 
 <div class="card" style="margin-top:16px">
-  <h2>⑤ 全局 tbest 刷新历史 · 具体到 case</h2>
+  <h2>⑤ case#16–20 全局 tbest 刷新历史 · 含队伍与排名变化</h2>
   <div id="tbevents" class="muted">等待数据…</div>
-  <h2 style="margin-top:14px">今日全部 tbest 变更（含你不在线时）</h2>
-  <div id="tbday" class="muted">等待数据…</div>
 </div>
 
 <script src="data.js"></script>
@@ -160,6 +159,22 @@ function fmtTime(iso){
   return d.toLocaleString('zh-CN',{hour12:false, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
 }
 
+function fmtRankMove(oldRank, newRank){
+  const a = Number(oldRank), b = Number(newRank);
+  if(!Number.isFinite(a) || !Number.isFinite(b)) return '';
+  if(a === b) return '<span class="move muted">持平</span>';
+  if(b < a) return `<span class="move up">↑${a-b}</span>`;
+  return `<span class="move down">↓${b-a}</span>`;
+}
+
+function parseRankMove(text){
+  const s = String(text || '');
+  if(s.includes('↑')) return '<span class="move up">'+s.match(/↑\d+/)?.[0]+'</span>';
+  if(s.includes('↓')) return '<span class="move down">'+s.match(/↓\d+/)?.[0]+'</span>';
+  if(s.includes('持平')) return '<span class="move muted">持平</span>';
+  return '';
+}
+
 async function refresh(){
   await reloadDataBundle();
   let log, evt;
@@ -185,11 +200,11 @@ async function refresh(){
   const prev = times[times.length-2];
   const cur = polls.get(last)||[], old = prev?polls.get(prev)||[]:[];
   const countOf = r => [
-    oCC >= 0 ? parseInt(r[oCC],10) : 15,
-    oPC >= 0 ? parseInt(r[oPC],10) : 5,
-    oHC >= 0 ? parseInt(r[oHC],10) : 10
+    oCC >= 0 ? parseInt(r[oCC],10) : 20,
+    oPC >= 0 ? parseInt(r[oPC],10) : 15,
+    oHC >= 0 ? parseInt(r[oHC],10) : 5
   ];
-  const counts = cur.length ? countOf(cur[0]) : [15,5,10];
+  const counts = cur.length ? countOf(cur[0]) : [20,15,5];
   const [caseCount, publicCount, hiddenCount] = counts;
   window.__caseCounts = {caseCount, publicCount, hiddenCount};
   const oldCounts = old.length ? countOf(old[0]) : counts;
@@ -241,7 +256,7 @@ async function refresh(){
     const cls = d>1e-9?'up':(d<-1e-9?'down':'muted');
     const dtxt = o && Math.abs(d)>1e-9 ? (d>0?'+':'')+d.toFixed(2) : '';
     const rk = +r[oR];
-    return `<tr class="${rk<=3?'r'+rk:''}"><td>${r[oR]}</td><td>${r[oN]||r[oU]}</td>
+    return `<tr class="${rk<=3?'r'+rk:''}"><td class="num">#${r[oR]}${fmtRankMove(o && o[oR], r[oR])}</td><td>${r[oN]||r[oU]}</td>
       <td class="num">${(+r[oSc]).toFixed(2)}</td>
       <td class="num ${cls}">${dtxt}</td>
       <td class="muted">${fmtTime(r[oC])}</td></tr>`;
@@ -253,7 +268,6 @@ async function refresh(){
   renderChartFromState();
   refreshTbest(times, polls);
   refreshTbEvents(times, polls);
-  refreshTbDay();
 }
 
 async function refreshTbDay(){
@@ -340,12 +354,16 @@ bindCalc();
 
 // ---- current hidden cases: aggregate trend only ----
 function renderHiddenTable(qOurs, source, tbScale, confidence, ciLow, ciHigh,
-                           caseCount=15, publicCount=5, hiddenCount=10){
+                           caseCount=20, publicCount=15, hiddenCount=5){
   const q = qOurs || 2.30;
   const f = (tbScale && tbScale > 0) ? tbScale : 1.0;
   const conf = confidence === 'high' ? '较高'
     : confidence === 'medium' ? '中等'
     : confidence === 'low' ? '较低' : '待定';
+  const lastR = Number(window.__lastEventR);
+  const lastMove = Number.isFinite(lastR) && lastR > 0
+    ? `<span class="${lastR < 1 ? 'up' : (lastR > 1 ? 'down' : 'muted')}">${lastR.toFixed(4)}×</span>`
+    : '<span class="muted">尚未观测</span>';
   const ci = Number.isFinite(+ciLow) && Number.isFinite(+ciHigh)
     ? ` · 累计 95% CI ${(+ciLow).toFixed(3)}–${(+ciHigh).toFixed(3)}`
     : '';
@@ -354,9 +372,10 @@ function renderHiddenTable(qOurs, source, tbScale, confidence, ciLow, ciHigh,
   const rows = [];
   for(let i=0;i<hiddenCount;i++){
     const caseNo = publicCount + i + 1;
-    rows.push(`<tr><td>case#${caseNo}</td><td class="num muted">不可见</td>
-      <td class="num muted">无法反解</td>
-      <td class="muted" style="font-size:11px">${conf} · 隐藏层聚合</td></tr>`);
+    rows.push(`<tr><td>case#${caseNo}</td>
+      <td class="num">隐藏层 ×${f.toFixed(4)}</td>
+      <td class="num">${lastMove}</td>
+      <td class="muted" style="font-size:11px">${conf} · 5 点聚合</td></tr>`);
   }
   tb.innerHTML = rows.join('');
   const note = document.getElementById('hiddenQ');
@@ -365,7 +384,7 @@ function renderHiddenTable(qOurs, source, tbScale, confidence, ciLow, ciHigh,
       + `　·　共 ${caseCount} 点：公开 ${publicCount}、隐藏 ${hiddenCount}`
       + `　·　隐藏层累计 tbest 指数 ×${f.toFixed(4)}`
       + ci
-      + `　·　<1 表示隐藏 tbest 变快，>1 表示变慢`;
+      + `　·　指数/r <1 表示隐藏 tbest 变快，>1 表示变慢`;
   }
 }
 renderHiddenTable(2.30, '', 1, '', NaN, NaN, 20, 15, 5);
@@ -428,52 +447,66 @@ async function renderTbestPanel(times, polls){
 async function refreshTbEvents(times, polls){
   const box = document.getElementById('tbevents');
   let rows;
-  try { rows = await loadCSV('tbest_log.csv'); }
-  catch(e){ return; }
-  if(rows.length < 2){ return; }
+  try { rows = await loadCSV('infer_report.csv'); }
+  catch(e){
+    box.innerHTML = '<div class="muted">尚无隐藏 tbest 刷新记录</div>';
+    return;
+  }
+  if(!rows || rows.length < 2){
+    box.innerHTML = `<div class="muted">尚未观察到 case#16–20 的全局 tbest 刷新事件。
+      系统持续用“未换 submission 的隐藏分数阶跃”做交叉验证。</div>`;
+    return;
+  }
   const head = rows[0], body = rows.slice(1);
-  const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'), iV=head.indexOf('tbest_us');
-
-  const byTs = new Map();
-  for(const r of body){
-    if(!byTs.has(r[iT])) byTs.set(r[iT], new Map());
-    byTs.get(r[iT]).set(r[iN], parseFloat(r[iV]));
-  }
-  const tsList = [...byTs.keys()].sort();
-  const out = [];
-
-  for(let i=1;i<tsList.length;i++){
-    const cur = byTs.get(tsList[i]), prev = byTs.get(tsList[i-1]);
-    const changed = [];
-    for(const [ci,v] of cur){
-      const p = prev.get(ci);
-      if(p!=null && Math.abs(v-p) > 1e-9) changed.push({ci, from:p, to:v});
-    }
-    if(!changed.length) continue;
-
-    // who submitted in this poll?
-    const prevPoll = polls.get(tsList[i-1]) || [];
-    const curPoll  = polls.get(tsList[i]) || [];
-    const oldSid = new Map(prevPoll.map(r=>[r[4], r[5]]));   // user_id -> submission_id
-    const subs = curPoll.filter(r => oldSid.has(r[4]) && oldSid.get(r[4]) !== r[5])
-                         .map(r => r[2]);
-    const who = subs.length ? subs.slice(0,3).join('、') : '（无新提交→他人刷新）';
-
-    for(const c of changed){
-      const d = c.to - c.from;
-      out.push(`<div class="ev">${tsList[i].slice(11)} <span class="tag up">case#${c.ci}</span>
-        <b>${who}</b> 刷新全局 tbest：
-        <span class="muted">${c.from.toFixed(2)} → ${c.to.toFixed(2)} µs
-        (${d>0?'+':''}${d.toFixed(2)})</span></div>`);
-    }
-  }
-  box.innerHTML = out.length ? out.slice(-25).reverse().join('')
-    : '<div class="muted">尚未观察到公开 case 的全局 tbest 变化</div>';
+  const ix = n => head.indexOf(n);
+  const iT=ix('ts_bj'), iR=ix('implied_r'), iCum=ix('cumulative_index'),
+        iDir=ix('direction'), iConf=ix('confidence'), iTeams=ix('teams_used'),
+        iSubs=ix('teams_submitted'), iRole=ix('top_role'),
+        iTop=ix('top_team'), iTopRank=ix('top_rank'), iTopBefore=ix('top_rank_before'),
+        iSubmitNames=ix('submitted_teams'), iAffected=ix('affected_top'),
+        iLo=ix('ci_low'), iHi=ix('ci_high');
+  const prettyTeams = s => String(s || '').split(';').filter(Boolean).map(x=>{
+    const m = x.match(/^(#\d+)\s+(.*?)（([^）]*)）$/);
+    return m ? `${m[1]} <b>${m[2]}</b>${parseRankMove(m[3])}` : x;
+  }).join('　·　');
+  const out = body.slice(-30).reverse().map(r=>{
+    const rr = parseFloat(r[iR]);
+    const cum = parseFloat(r[iCum]);
+    const slowed = String(r[iDir] || '').startsWith('slower');
+    const dirCls = slowed ? 'down' : (rr < 1 ? 'up' : 'muted');
+    const dirText = slowed ? '变慢 / 疑似违规清理' : '变快';
+    const conf = r[iConf] === 'high' ? '较高'
+      : r[iConf] === 'medium' ? '中等'
+      : r[iConf] === 'low' ? '较低' : '待定';
+    const role = r[iRole] === 'submitted' ? '本秒提交队伍' : '未识别新提交；首个受影响样本';
+    const topMove = fmtRankMove(r[iTopBefore], r[iTopRank]);
+    const top = r[iTop]
+      ? `#${r[iTopRank]} <b>${r[iTop]}</b>${topMove}`
+      : '未识别';
+    const submitted = prettyTeams(r[iSubmitNames]) || '无';
+    const affected = prettyTeams(r[iAffected]) || '—';
+    const ci = r[iLo] && r[iHi]
+      ? ` · 本次 95% CI ${(+r[iLo]).toFixed(3)}–${(+r[iHi]).toFixed(3)}`
+      : '';
+    return `<div class="ev">
+      <div><span class="tag ${dirCls}">case#16–20</span>
+        <b>${r[iT].slice(11)}</b>　全局 tbest ${dirText}
+        <span class="${dirCls}">r=${rr.toFixed(4)}×</span>
+        <span class="muted">· 累计 ×${cum.toFixed(4)}${ci}</span></div>
+      <div style="margin-top:3px">${role}：${top}
+        <span class="muted">· 置信度 ${conf} · 样本 ${r[iTeams]}</span></div>
+      <div class="muted" style="margin-top:2px">本轮新提交（${r[iSubs]||0}）：${submitted}</div>
+      <div class="muted" style="margin-top:2px">受影响样本前三：${affected}</div>
+    </div>`;
+  });
+  box.innerHTML = `<div class="muted" style="font-size:11px;margin-bottom:6px">
+      共 ${body.length} 次已确认刷新 · 排名箭头相对上一轮采样；↑ 表示名次上升</div>`
+    + out.join('');
 }
 
 async function refreshTbest(times, polls){
   const box = document.getElementById('tbest');
-  const counts = window.__caseCounts || {caseCount:15, publicCount:5, hiddenCount:10};
+  const counts = window.__caseCounts || {caseCount:20, publicCount:15, hiddenCount:5};
   const {caseCount, publicCount, hiddenCount} = counts;
   let rows;
   try { rows = await loadCSV('infer_report.csv'); }
@@ -486,6 +519,7 @@ async function refreshTbest(times, polls){
      最近采样 ${lastTs?lastTs.slice(11):'—'}（每 10 秒采样一轮）</div>`;
   if(!rows || rows.length < 2){
     window.__tbIdx = 1;
+    window.__lastEventR = NaN;
     // fallback: derive the hidden-layer level directly from score arithmetic
     // case_count*score = sum(all case scores); public case scores are known.
     let proxy = '';
@@ -511,10 +545,10 @@ async function refreshTbest(times, polls){
         </div>`;
     }
     box.innerHTML = status + proxy +
-      `<div style="font-size:14px;margin:8px 0 4px">尚未发生隐藏 tbest 刷新事件</div>
+      `<div style="font-size:14px;margin:8px 0 4px">case#${publicCount+1}–${publicCount+hiddenCount}：尚未发生可确认的隐藏 tbest 刷新事件</div>
        <div class="muted" style="font-size:12px">
        判定条件：先扣除公开 ${publicCount} 例得分，再要求多个“未换 submission_id”的隐藏分数同向阶跃。<br>
-       公开 case 单独刷新不会被算成隐藏刷新。</div>`;
+       页面只预测最后 ${hiddenCount} 个隐藏 case；公开 case 单独刷新不会被算成隐藏刷新。</div>`;
     return;
   }
   const head = rows[0], body = rows.slice(1);
@@ -527,8 +561,13 @@ async function refreshTbest(times, polls){
         iLo=idx('ci_low'), iHi=idx('ci_high'),
         iCumLo=idx('cumulative_ci_low'), iCumHi=idx('cumulative_ci_high'),
         iAgree=idx('r2'), iConf=idx('confidence'),
-        iMajUp=idx('majority_up'), iMajFrac=idx('majority_fraction');
+        iMajUp=idx('majority_up'), iMajFrac=idx('majority_fraction'),
+        iTopRole=idx('top_role'), iTopTeam=idx('top_team'),
+        iTopRank=idx('top_rank'), iTopBefore=idx('top_rank_before'),
+        iTopDelta=idx('top_rank_delta'), iSubmitted=idx('submitted_teams'),
+        iAffected=idx('affected_top');
   const cum = +last[iCum], r = +last[iR];
+  window.__lastEventR = r;
   const iDir = idx('direction');
   const slowed = iDir >= 0 && String(last[iDir]).indexOf('slower') === 0;
   const confidence = iConf >= 0 ? last[iConf] : '';
@@ -544,6 +583,31 @@ async function refreshTbest(times, polls){
         ? ` ${(100 * (+last[iMajFrac])).toFixed(1)}%`
         : '')
     : '';
+  const topRole = iTopRole >= 0 ? String(last[iTopRole] || '') : '';
+  const topRank = iTopRank >= 0 && last[iTopRank] !== '' ? `#${last[iTopRank]}` : '';
+  const topMove = iTopDelta >= 0
+    ? fmtRankMove(iTopBefore >= 0 ? last[iTopBefore] : NaN, last[iTopRank])
+    : '';
+  const topTeam = iTopTeam >= 0 && last[iTopTeam]
+    ? `${topRank} <b>${last[iTopTeam]}</b>${topMove}`
+    : '未识别到具体触发队伍';
+  const submitterLine = topRole === 'submitted'
+    ? `本秒新提交队伍：${topTeam}`
+    : `本秒未识别到新提交；首个受影响样本：${topTeam}`;
+  const submittedList = iSubmitted >= 0 && last[iSubmitted]
+    ? String(last[iSubmitted]).split(';').slice(0,5)
+        .map(s=>{
+          const m = s.match(/^(#\d+)\s+(.*?)（([^）]*)）$/);
+          return m ? `${m[1]} <b>${m[2]}</b>${parseRankMove(m[3])}` : s;
+        }).join('　·　')
+    : '无';
+  const affectedList = iAffected >= 0 && last[iAffected]
+    ? String(last[iAffected]).split(';').slice(0,3)
+        .map(s=>{
+          const m = s.match(/^(#\d+)\s+(.*?)（([^）]*)）$/);
+          return m ? `${m[1]} <b>${m[2]}</b>${parseRankMove(m[3])}` : s;
+        }).join('　·　')
+    : '—';
   window.__tbIdx = cum;
   renderHiddenTable(
     window.__hiddenQ, '由本队总分反解', cum, confidence,
@@ -567,6 +631,9 @@ async function refreshTbest(times, polls){
        ${iLo>=0 && last[iLo] ? `（95% CI ${(+last[iLo]).toFixed(3)}–${(+last[iHi]).toFixed(3)}）` : ''}
        ${agree ? '，' + agree : ''}
        ${majority ? `，多数队伍分数${majority}` : ''}<br>
+       <span style="color:var(--fg)">${submitterLine}</span><br>
+       本轮新提交：${submittedList}<br>
+       受影响样本前三：${affectedList}<br>
        解读：相对监控起点，隐藏层 tbest ${dir}，累计约 <b>${cum.toFixed(3)}×</b>
      </div>
      <div class="muted" style="font-size:11px;margin-top:6px">
