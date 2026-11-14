@@ -214,6 +214,7 @@ async function refresh(){
   const oT=idx('ts_bj'),oR=idx('rank'),oN=idx('team'),oU=idx('user_id'),
         oS=idx('submission_id'),oSc=idx('score'),oC=idx('create_time'),
         oCC=idx('case_count'),oPC=idx('public_count'),oHC=idx('hidden_count');
+  window.__monitorIndex = {oR, oN, oU, oS};
 
   // group by poll timestamp
   const polls = new Map();
@@ -441,17 +442,19 @@ renderHiddenTable(2.30, '', 1, '', NaN, NaN, 20, 15, 5);
 async function renderTbestPanel(times, polls){
   const box = document.getElementById('events');
   try {
-    let rows, changeRows;
+    let rows, changeRows, attrRows;
     try { rows = await loadCSV('tbest_log.csv'); }
     catch(e){ box.innerHTML = '<div class="muted">data.js 里没有 tbest_log.csv（等待下一轮推送）</div>'; return; }
     if(!rows || rows.length < 2){ box.innerHTML = '<div class="muted">等待首个采样…</div>'; return; }
     try { changeRows = await loadCSV('tbest_changes.csv'); }
     catch(e){ changeRows = []; }
+    try { attrRows = await loadCSV('public_tbest_events.csv'); }
+    catch(e){ attrRows = []; }
 
     const head = rows[0];
     const body = rows.slice(1).filter(r => r.length >= 4);
     const iT=head.indexOf('ts_bj'), iN=head.indexOf('case_index'),
-          iV=head.indexOf('tbest_us'), iC=head.indexOf('case_id');
+          iV=head.indexOf('tbest_us');
     if(iT<0||iN<0||iV<0){ box.innerHTML = '<div class="muted">tbest_log 表头异常</div>'; return; }
 
     // Latest current snapshot for every public case.
@@ -473,13 +476,73 @@ async function renderTbestPanel(times, polls){
         });
       }
     }
+    const attrs = new Map();
+    if(attrRows && attrRows.length > 1){
+      const ah=attrRows[0], ab=attrRows.slice(1);
+      const ax = n => ah.indexOf(n);
+      const iAT=ax('ts_bj'), iAC=ax('case_index'), iACand=ax('candidate_team'),
+            iARank=ax('candidate_rank'), iABefore=ax('candidate_rank_before'),
+            iAEv=ax('evidence'), iASub=ax('submitted_teams'), iAMove=ax('rank_movers'),
+            iATop=ax('affected_top');
+      for(const r of ab){
+        attrs.set(parseInt(r[iAC],10), {
+          ts:r[iAT], candidate:r[iACand], rank:r[iARank], before:r[iABefore],
+          evidence:r[iAEv], submitted:r[iASub], movers:r[iAMove], top:r[iATop]
+        });
+      }
+    }
+
+    function fmtRanked(r, prev){
+      const mi=window.__monitorIndex || {};
+      const rank=prev ? r[mi.oR] : r[mi.oR];
+      const team=r[mi.oN] || r[mi.oU];
+      if(!prev) return `#${rank} ${team}`;
+      const a=+prev[mi.oR], b=+rank;
+      const move=a===b?'持平':(b<a?`↑${a-b}`:`↓${b-a}`);
+      return `#${b} <b>${team}</b>（#${a}→#${b} ${move}）`;
+    }
+
+    function pollContext(changeTs){
+      const mi=window.__monitorIndex || {};
+      let pos=times.indexOf(changeTs);
+      if(pos < 0){
+        for(let i=0;i<times.length;i++){
+          if(times[i] <= changeTs) pos=i;
+          else break;
+        }
+      }
+      if(pos < 0) return {submitted:'当时无榜单快照', movers:'—', top:'—'};
+      const current=polls.get(times[pos]) || [];
+      const prior=pos>0 ? (polls.get(times[pos-1]) || []) : [];
+      const prevMap=new Map(prior.map(r=>[r[mi.oU],r]));
+      const submitted=[];
+      const movers=[];
+      for(const r of current){
+        const p=prevMap.get(r[mi.oU]);
+        if(!p) continue;
+        if(p[mi.oS] !== r[mi.oS]) submitted.push(fmtRanked(r,p));
+        const a=+p[mi.oR], b=+r[mi.oR];
+        if(a!==b) movers.push({abs:Math.abs(a-b),html:fmtRanked(r,p)});
+      }
+      movers.sort((a,b)=>b.abs-a.abs);
+      const top=current.slice().sort((a,b)=>+a[mi.oR]-+b[mi.oR]).slice(0,3)
+        .map(r=>fmtRanked(r,prevMap.get(r[mi.oU])));
+      return {
+        submitted:submitted.length ? submitted.slice(0,5).join('　·　') : '无同期新提交',
+        movers:movers.length ? movers.slice(0,5).map(x=>x.html).join('　·　') : '无明显名次变化',
+        top:top.length ? top.join('　·　') : '—'
+      };
+    }
+
     const changedCases = [...changes.entries()].sort((a,b)=>a[0]-b[0]);
     const changedHtml = changedCases.length
       ? changedCases.map(([ci,c])=>{
           const pct=c.prev ? (c.value/c.prev-1)*100 : 0;
           const cls=c.delta<0?'up':'down';
+          const a=attrs.get(ci);
+          const who=a && a.candidate ? ` · ${a.candidate}` : ' · 无精确持有者';
           return `<span class="pill ${cls}">case#${ci} ${c.prev.toFixed(4)}→${c.value.toFixed(4)}
-            ${c.delta>0?'+':''}${c.delta.toFixed(4)} µs</span>`;
+            ${c.delta>0?'+':''}${c.delta.toFixed(4)} µs${who}</span>`;
         }).join(' ')
       : '<span class="muted">监控期间尚无公开 case tbest 变更</span>';
 
@@ -489,29 +552,47 @@ async function renderTbestPanel(times, polls){
         const c=changes.get(ci);
         if(!c){
           return `<tr><td>case#${ci}</td><td class="num"><b>${v.toFixed(4)}</b></td>
-            <td class="num">—</td><td class="num muted">—</td>
-            <td class="num muted">—</td><td class="muted">无变化</td></tr>`;
+            <td class="muted">无变化</td><td class="muted">—</td>
+            <td class="muted">—</td><td class="muted">—</td></tr>`;
         }
         const d=c.value-c.prev;
         const pct=c.prev ? (d/c.prev)*100 : 0;
         const cls=d<0?'up':(d>0?'down':'muted');
+        const a=attrs.get(ci);
+        const ctx=pollContext(c.ts);
+        let attribution='无法唯一归因';
+        if(a && a.candidate){
+          const oldRank=a.before ? `#${a.before}→#${a.rank}` : `#${a.rank}`;
+          attribution=`#${a.rank} <b>${a.candidate}</b> ${a.before?`（${oldRank}）`:''}`;
+        }else if(a && a.evidence){
+          attribution=`无精确持有者`;
+        }else if(d>0){
+          attribution='无精确持有者，疑似违规清理/基准回退';
+        }else{
+          attribution='无精确持有者，可能来自榜外提交';
+        }
+        const evidence=a && a.evidence ? a.evidence : '';
+        const submitted=a && a.submitted ? a.submitted : ctx.submitted;
+        const movers=a && a.movers ? a.movers : ctx.movers;
         return `<tr class="event-row-changed"><td>case#${ci}</td>
           <td class="num"><b>${v.toFixed(4)}</b></td>
-          <td class="num">${c.prev.toFixed(4)}</td>
-          <td class="num ${cls}"><b>${d>0?'+':''}${d.toFixed(4)}</b></td>
-          <td class="num ${cls}">${pct>0?'+':''}${pct.toFixed(3)}%</td>
-          <td class="muted">${c.ts.slice(5,16)} <span class="pill">${c.count} 次</span></td></tr>`;
+          <td><span class="muted">${c.prev.toFixed(4)} →</span>
+            <span class="${cls}"><b>${d>0?'+':''}${d.toFixed(4)} µs / ${pct>0?'+':''}${pct.toFixed(3)}%</b></span></td>
+          <td>${attribution}${evidence?`<br><span class="muted">${evidence}</span>`:''}</td>
+          <td style="white-space:normal">同期提交：${submitted}<br>名次影响：${movers}</td>
+          <td class="muted">${c.ts.slice(5,16)}<br><span class="pill">${c.count} 次</span></td></tr>`;
       }).join('');
 
     box.innerHTML = `<div style="font-size:12px;margin-bottom:8px;line-height:1.9">
       最近真实变更：${changedHtml}</div>
       <table class="event-table" style="table-layout:fixed">
-      <colgroup><col style="width:13%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:13%"><col></colgroup>
-      <thead><tr><th>测试点</th><th class="num">当前 tbest</th><th class="num">变更前</th>
-        <th class="num">变化量</th><th class="num">变化比例</th><th>最近变更时间</th></tr></thead>
+      <colgroup><col style="width:8%"><col style="width:12%"><col style="width:18%"><col style="width:20%"><col><col style="width:11%"></colgroup>
+      <thead><tr><th>测试点</th><th class="num">当前 tbest</th><th>最近变化</th>
+        <th>影响者 / 归因</th><th>同期提交与排名影响</th><th>时间</th></tr></thead>
       <tbody>${html}</tbody></table>
       <div class="muted" style="font-size:11px;margin-top:6px">
-      当前数据时间 ${lastTs.slice(11)}　·　绿=变快，红=变慢　·　“无变化”表示本次监控期间尚未捕获到该案 tbest 更新
+      当前数据时间 ${lastTs.slice(11)}　·　绿=变快，红=变慢　·　
+      “精确持有者”指该队伍当前成绩与新 tbest 匹配；变慢且无精确持有者通常意味着清退或基准回退
       </div>`;
 
     // feed the reverse-estimate dropdown: case -> tbest
