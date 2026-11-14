@@ -159,10 +159,10 @@ function fmtTime(iso){
   return d.toLocaleString('zh-CN',{hour12:false, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
 }
 
-function fmtRankMove(oldRank, newRank){
+function fmtRankMove(oldRank, newRank, showFlat=true){
   const a = Number(oldRank), b = Number(newRank);
   if(!Number.isFinite(a) || !Number.isFinite(b)) return '';
-  if(a === b) return '<span class="move muted">持平</span>';
+  if(a === b) return showFlat ? '<span class="move muted">持平</span>' : '';
   if(b < a) return `<span class="move up">↑${a-b}</span>`;
   return `<span class="move down">↓${b-a}</span>`;
 }
@@ -256,7 +256,7 @@ async function refresh(){
     const cls = d>1e-9?'up':(d<-1e-9?'down':'muted');
     const dtxt = o && Math.abs(d)>1e-9 ? (d>0?'+':'')+d.toFixed(2) : '';
     const rk = +r[oR];
-    return `<tr class="${rk<=3?'r'+rk:''}"><td class="num">#${r[oR]}${fmtRankMove(o && o[oR], r[oR])}</td><td>${r[oN]||r[oU]}</td>
+    return `<tr class="${rk<=3?'r'+rk:''}"><td class="num">#${r[oR]}${fmtRankMove(o && o[oR], r[oR], false)}</td><td>${r[oN]||r[oU]}</td>
       <td class="num">${(+r[oSc]).toFixed(2)}</td>
       <td class="num ${cls}">${dtxt}</td>
       <td class="muted">${fmtTime(r[oC])}</td></tr>`;
